@@ -88,7 +88,7 @@ func NewS3SourceClient(s3Config S3SourceConfig) (*S3SourceClient, error) {
 
 		s3Client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(endpoint)
-			o.UsePathStyle = true // Required for MinIO and some custom S3 implementations
+			o.UsePathStyle = true                              // Required for MinIO and some custom S3 implementations
 			o.DisableLogOutputChecksumValidationSkipped = true // Suppress MinIO checksum warnings
 		})
 	} else {

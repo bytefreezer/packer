@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/config"
 	"github.com/bytefreezer/packer/storage"
-	"github.com/bytefreezer/goodies/log"
 )
 
 // ProcessingOrchestrator manages the overall processing workflow with spool-based reliability
@@ -429,7 +429,7 @@ func isLockAcquisitionFailure(err error) bool {
 	errorStr := strings.ToLower(err.Error())
 	// Check for lock-related error messages
 	return strings.Contains(errorStr, "already locked") ||
-		   strings.Contains(errorStr, "lock acquisition failed") ||
-		   strings.Contains(errorStr, "dataset locked") ||
-		   strings.Contains(errorStr, "failed to acquire lock")
+		strings.Contains(errorStr, "lock acquisition failed") ||
+		strings.Contains(errorStr, "dataset locked") ||
+		strings.Contains(errorStr, "failed to acquire lock")
 }

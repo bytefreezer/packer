@@ -19,8 +19,8 @@ type ProcessingConfig struct {
 	FlattenDelimiter   string `json:"flatten_delimiter,omitempty"`
 	EnableRawStorage   bool   `json:"enable_raw_storage"`
 	PartitioningScheme string `json:"partitioning_scheme,omitempty"` // "hive", "date", "date_hour", "columnar", "iceberg", "none"
-	PartitionLayout    string `json:"partition_layout,omitempty"`     // Template for partition path layout
-	MetadataLevel      string `json:"metadata_level,omitempty"`       // "root" or "leaf" (default: "leaf")
+	PartitionLayout    string `json:"partition_layout,omitempty"`    // Template for partition path layout
+	MetadataLevel      string `json:"metadata_level,omitempty"`      // "root" or "leaf" (default: "leaf")
 }
 
 type S3Destination struct {

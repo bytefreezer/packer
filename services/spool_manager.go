@@ -2,8 +2,8 @@ package services
 
 import (
 	"context"
-	"github.com/bytedance/sonic"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -11,40 +11,40 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bytefreezer/packer/config"
 	"github.com/bytefreezer/goodies/log"
+	"github.com/bytefreezer/packer/config"
 )
 
 // SpoolJob represents a job that can be spooled to disk
 type SpoolJob struct {
-	ID            string                 `json:"id"`
-	TenantID      string                 `json:"tenant_id"`
-	DatasetID     string                 `json:"dataset_id"`
-	JobType       string                 `json:"job_type"`
-	Payload       map[string]interface{} `json:"payload"`
-	CreatedAt     time.Time              `json:"created_at"`
-	LastAttempt   time.Time              `json:"last_attempt"`
-	Attempts      int                    `json:"attempts"`
-	MaxAttempts   int                    `json:"max_attempts"`
-	Priority      int                    `json:"priority"` // Higher number = higher priority
-	RetryAfter    time.Time              `json:"retry_after"`
-	ErrorMessage  string                 `json:"error_message,omitempty"`
+	ID           string                 `json:"id"`
+	TenantID     string                 `json:"tenant_id"`
+	DatasetID    string                 `json:"dataset_id"`
+	JobType      string                 `json:"job_type"`
+	Payload      map[string]interface{} `json:"payload"`
+	CreatedAt    time.Time              `json:"created_at"`
+	LastAttempt  time.Time              `json:"last_attempt"`
+	Attempts     int                    `json:"attempts"`
+	MaxAttempts  int                    `json:"max_attempts"`
+	Priority     int                    `json:"priority"` // Higher number = higher priority
+	RetryAfter   time.Time              `json:"retry_after"`
+	ErrorMessage string                 `json:"error_message,omitempty"`
 }
 
 // SpoolManager handles persistent job queuing with infinite retry and DLQ for invalid jobs
 type SpoolManager struct {
-	config    *config.Config
-	basePath  string
-	queueDir  string
-	retryDir  string
-	dlqDir    string
+	config   *config.Config
+	basePath string
+	queueDir string
+	retryDir string
+	dlqDir   string
 }
 
 const (
-	QueueDirName = "queue"
-	RetryDirName = "retry"
-	DLQDirName   = "dlq"
-	JobExtension = ".job"
+	QueueDirName  = "queue"
+	RetryDirName  = "retry"
+	DLQDirName    = "dlq"
+	JobExtension  = ".job"
 	MetaExtension = ".meta"
 )
 
@@ -137,7 +137,7 @@ func (sm *SpoolManager) RequeueForRetry(job *SpoolJob, errorMsg string) error {
 
 	// Calculate exponential backoff: 2^attempts * 30 seconds
 	backoffSeconds := 30 * (1 << job.Attempts) // 30s, 60s, 120s, 240s...
-	if backoffSeconds > 1800 { // Cap at 30 minutes
+	if backoffSeconds > 1800 {                 // Cap at 30 minutes
 		backoffSeconds = 1800
 	}
 	job.RetryAfter = time.Now().Add(time.Duration(backoffSeconds) * time.Second)

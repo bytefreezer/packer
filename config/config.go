@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
+	"github.com/bytefreezer/goodies/log"
 	"github.com/knadh/koanf/parsers/yaml"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
 	"github.com/knadh/koanf/v2"
-	"github.com/bytefreezer/goodies/log"
 	pkgerrors "github.com/pkg/errors"
 
 	"github.com/bytefreezer/packer/alerts"
@@ -22,22 +22,22 @@ import (
 var k = koanf.New(".")
 
 type Config struct {
-	App                     App                               `mapstructure:"app"`
-	Logging                 LoggingConfig                     `mapstructure:"logging"`
-	Server                  Server                            `mapstructure:"server"`
-	Bytefreezer             Bytefreezer                       `mapstructure:"bytefreezer"`
-	ControlService          ControlServiceConfig              `mapstructure:"control_service"`
-	Otel                    Otel                              `mapstructure:"otel"`
-	Housekeeping            Housekeeping                      `mapstructure:"housekeeping"`
-	S3Source                S3Config                          `mapstructure:"s3source"`
+	App            App                  `mapstructure:"app"`
+	Logging        LoggingConfig        `mapstructure:"logging"`
+	Server         Server               `mapstructure:"server"`
+	Bytefreezer    Bytefreezer          `mapstructure:"bytefreezer"`
+	ControlService ControlServiceConfig `mapstructure:"control_service"`
+	Otel           Otel                 `mapstructure:"otel"`
+	Housekeeping   Housekeeping         `mapstructure:"housekeeping"`
+	S3Source       S3Config             `mapstructure:"s3source"`
 	// S3Destination removed - now using per-tenant:dataset destinations
 	// PostgreSQL removed - now using Control Service API
-	Parquet                 ParquetConfig                     `mapstructure:"parquet"`
-	UploadPool              UploadPoolConfig                  `mapstructure:"uploadpool"`
-	SOC                     SOCAlert                          `mapstructure:"soc"`
-	HealthReporting         HealthReportingConfig             `mapstructure:"health_reporting"`
-	ErrorTracking           ErrorTrackingConfig               `mapstructure:"error_tracking"`
-	Dev                     bool                              `mapstructure:"dev"` // Deprecated - use control_service instead
+	Parquet              ParquetConfig                 `mapstructure:"parquet"`
+	UploadPool           UploadPoolConfig              `mapstructure:"uploadpool"`
+	SOC                  SOCAlert                      `mapstructure:"soc"`
+	HealthReporting      HealthReportingConfig         `mapstructure:"health_reporting"`
+	ErrorTracking        ErrorTrackingConfig           `mapstructure:"error_tracking"`
+	Dev                  bool                          `mapstructure:"dev"` // Deprecated - use control_service instead
 	TenantClient         *tenant.TenantClient          `mapstructure:"-"`
 	TenantDatabase       *tenant.TenantDatabase        `mapstructure:"-"`
 	SOCAlertClient       *alerts.SOCAlertClient        `mapstructure:"-"`
@@ -84,14 +84,14 @@ type PostgreSQLConfig struct {
 }
 
 type ParquetConfig struct {
-	MaxFileSizeMB      int    `mapstructure:"max_file_size_mb"`
-	TimeoutSeconds     int    `mapstructure:"timeout_seconds"`
-	Compression        string `mapstructure:"compression"`
-	KeepSource         bool   `mapstructure:"keep_source"`
-	StreamingMode      bool   `mapstructure:"streaming_mode"`
-	MemoryBufferMB     int    `mapstructure:"memory_buffer_mb"`
-	CheckpointRecords  int    `mapstructure:"checkpoint_records"`
-	AtomicUpload       bool   `mapstructure:"atomic_upload"`
+	MaxFileSizeMB     int    `mapstructure:"max_file_size_mb"`
+	TimeoutSeconds    int    `mapstructure:"timeout_seconds"`
+	Compression       string `mapstructure:"compression"`
+	KeepSource        bool   `mapstructure:"keep_source"`
+	StreamingMode     bool   `mapstructure:"streaming_mode"`
+	MemoryBufferMB    int    `mapstructure:"memory_buffer_mb"`
+	CheckpointRecords int    `mapstructure:"checkpoint_records"`
+	AtomicUpload      bool   `mapstructure:"atomic_upload"`
 }
 
 type Housekeeping struct {
@@ -101,9 +101,9 @@ type Housekeeping struct {
 }
 
 type HousekeepingCleanup struct {
-	Enabled                  bool                   `mapstructure:"enabled"`
-	ProcessingDirMaxAgeHours int                    `mapstructure:"processing_dir_max_age_hours"`
-	OrphanedFilesMaxAgeHours int                    `mapstructure:"orphaned_files_max_age_hours"`
+	Enabled                  bool                    `mapstructure:"enabled"`
+	ProcessingDirMaxAgeHours int                     `mapstructure:"processing_dir_max_age_hours"`
+	OrphanedFilesMaxAgeHours int                     `mapstructure:"orphaned_files_max_age_hours"`
 	LockCleanup              HousekeepingLockCleanup `mapstructure:"lock_cleanup"`
 }
 
@@ -157,7 +157,6 @@ type HealthReportingConfig struct {
 type ErrorTrackingConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 }
-
 
 func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 	if cfgFile == "" {

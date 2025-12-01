@@ -8,6 +8,7 @@ on:
 
 env:
   GO_VERSION: '1.24.4'
+  GOPRIVATE: github.com/bytefreezer/*
   
 jobs:
   lint:
@@ -21,6 +22,9 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: ${{ env.GO_VERSION }}
+
+    - name: Configure git for private modules
+      run: git config --global url."https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -72,6 +76,9 @@ jobs:
       with:
         go-version: ${{ matrix.go-version }}
 
+    - name: Configure git for private modules
+      run: git config --global url."https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
     - name: Cache Go modules
       uses: actions/cache@v4
       with:
@@ -120,6 +127,9 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: ${{ env.GO_VERSION }}
+
+    - name: Configure git for private modules
+      run: git config --global url."https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
     - name: Cache Go modules
       uses: actions/cache@v4
@@ -190,6 +200,9 @@ jobs:
       with:
         go-version: ${{ env.GO_VERSION }}
 
+    - name: Configure git for private modules
+      run: git config --global url."https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+
     - name: Install Nancy (dependency scanner)
       run: go install github.com/sonatype-nexus-community/nancy@latest
 
@@ -215,6 +228,9 @@ jobs:
       uses: actions/setup-go@v4
       with:
         go-version: ${{ env.GO_VERSION }}
+
+    - name: Configure git for private modules
+      run: git config --global url."https://${{ github.actor }}:${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
 
     - name: Cache Go modules
       uses: actions/cache@v4

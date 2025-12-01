@@ -93,18 +93,18 @@ func (c *ControlAPIMetadataClient) UpsertFileMetadata(ctx context.Context, metad
 	}
 
 	body := map[string]interface{}{
-		"tenant_id":        metadata.TenantID,
-		"dataset_id":       metadata.DatasetID,
-		"file_path":        metadata.FilePath,
-		"partition_path":   metadata.PartitionPath,
-		"file_size_bytes":  metadata.FileSizeBytes,
-		"row_count":        metadata.RowCount,
-		"created_at":       metadata.CreatedAt,
-		"last_modified":    metadata.LastModified,
-		"schema_json":      schemaMap,
-		"column_stats":     columnStats,
-		"file_checksum":    metadata.FileChecksum,
-		"instance_id":      metadata.InstanceID,
+		"tenant_id":       metadata.TenantID,
+		"dataset_id":      metadata.DatasetID,
+		"file_path":       metadata.FilePath,
+		"partition_path":  metadata.PartitionPath,
+		"file_size_bytes": metadata.FileSizeBytes,
+		"row_count":       metadata.RowCount,
+		"created_at":      metadata.CreatedAt,
+		"last_modified":   metadata.LastModified,
+		"schema_json":     schemaMap,
+		"column_stats":    columnStats,
+		"file_checksum":   metadata.FileChecksum,
+		"instance_id":     metadata.InstanceID,
 	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/packer/metadata/files", body)

@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/config"
 	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/packer/storage"
-	"github.com/bytefreezer/goodies/log"
 )
 
 type UploadWorkerPool struct {
@@ -58,10 +58,10 @@ type UploadResult struct {
 }
 
 type UploadWorker struct {
-	id              int
-	pool            *UploadWorkerPool
-	uploadQueue     <-chan *UploadJob
-	retryQueue      <-chan *UploadJob
+	id          int
+	pool        *UploadWorkerPool
+	uploadQueue <-chan *UploadJob
+	retryQueue  <-chan *UploadJob
 }
 
 type UploadStats struct {
@@ -100,8 +100,8 @@ func NewUploadWorkerPool(cfg *config.Config, s3DestinationManager *storage.S3Des
 	// Initialize workers
 	for i := 0; i < workerCount; i++ {
 		pool.workers[i] = &UploadWorker{
-			id:         i,
-			pool:       pool,
+			id:          i,
+			pool:        pool,
 			uploadQueue: pool.uploadQueue,
 			retryQueue:  pool.retryQueue,
 		}

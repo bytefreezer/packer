@@ -4,31 +4,31 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"github.com/bytedance/sonic"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/jeremywohl/flatten"
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/config"
 	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/packer/storage"
-	"github.com/bytefreezer/goodies/log"
+	"github.com/jeremywohl/flatten"
 )
 
 type TenantProcessor struct {
-	config                   *config.Config
-	instanceID               string
-	parquetConverter         *ParquetConverter
-	uploadPool               *UploadWorkerPool
-	dataLayoutManager        *DataLayoutManager
-	metrics                  *TenantMetrics
-	spoolManager             *SpoolManager
-	lockClient               storage.LockClient
-	activityReporter         *ActivityReporter
+	config            *config.Config
+	instanceID        string
+	parquetConverter  *ParquetConverter
+	uploadPool        *UploadWorkerPool
+	dataLayoutManager *DataLayoutManager
+	metrics           *TenantMetrics
+	spoolManager      *SpoolManager
+	lockClient        storage.LockClient
+	activityReporter  *ActivityReporter
 }
 
 type ProcessingResult struct {
@@ -94,15 +94,15 @@ func NewTenantProcessor(cfg *config.Config, spoolManager *SpoolManager, lockClie
 	uploadPool := NewUploadWorkerPool(cfg, cfg.S3DestinationManager, metadataManager, workerCount, tenantMetrics)
 
 	return &TenantProcessor{
-		config:                   cfg,
-		instanceID:               instanceID,
-		parquetConverter:         NewParquetConverter(),
-		uploadPool:               uploadPool,
-		dataLayoutManager:        NewDataLayoutManager(),
-		metrics:                  tenantMetrics,
-		spoolManager:             spoolManager,
-		lockClient:               lockClient,
-		activityReporter:         activityReporter,
+		config:            cfg,
+		instanceID:        instanceID,
+		parquetConverter:  NewParquetConverter(),
+		uploadPool:        uploadPool,
+		dataLayoutManager: NewDataLayoutManager(),
+		metrics:           tenantMetrics,
+		spoolManager:      spoolManager,
+		lockClient:        lockClient,
+		activityReporter:  activityReporter,
 	}, nil
 }
 
@@ -161,7 +161,6 @@ func (tp *TenantProcessor) ProcessAvailableTenants(ctx context.Context) ([]*Proc
 				return results, ctx.Err()
 			default:
 			}
-
 
 			log.Infof("Processing dataset: %s (%s) for tenant %s", dataset.ID, dataset.Name, tenant.ID)
 			result := tp.processDataset(ctx, &tenant, dataset, lockDuration)
@@ -320,16 +319,16 @@ func (tp *TenantProcessor) processDatasetStreaming(ctx context.Context, tenant *
 	// Step 4: Stream NDJSON files directly to Parquet using parquet converter
 	conversionStart := time.Now()
 	parquetFilePath, conversionResult, err := tp.parquetConverter.StreamNDJSONToParquet(ctx, files, layout.ParquetPath, &ParquetConversionOptions{
-		Compression:       tp.config.Parquet.Compression,
-		MaxFileSizeMB:     tp.config.Parquet.MaxFileSizeMB,
-		MemoryBufferMB:    tp.config.Parquet.MemoryBufferMB,
-		CheckpointRecords: tp.config.Parquet.CheckpointRecords,
-		AtomicUpload:      tp.config.Parquet.AtomicUpload,
-		S3SourceClient:    tp.config.S3SourceClient,
+		Compression:          tp.config.Parquet.Compression,
+		MaxFileSizeMB:        tp.config.Parquet.MaxFileSizeMB,
+		MemoryBufferMB:       tp.config.Parquet.MemoryBufferMB,
+		CheckpointRecords:    tp.config.Parquet.CheckpointRecords,
+		AtomicUpload:         tp.config.Parquet.AtomicUpload,
+		S3SourceClient:       tp.config.S3SourceClient,
 		S3DestinationManager: tp.config.S3DestinationManager,
-		Dataset:           dataset,
-		ActivityReporter:  tp.activityReporter,
-		OperationID:       operationID,
+		Dataset:              dataset,
+		ActivityReporter:     tp.activityReporter,
+		OperationID:          operationID,
 	})
 
 	conversionTime := time.Since(conversionStart)
@@ -913,7 +912,7 @@ func (tp *TenantProcessor) GetProcessingStats() map[string]interface{} {
 			"average_time":    uploadStats.AverageTime.String(),
 			"workers_active":  uploadStats.WorkersActive,
 		},
-		"destination_client":     "S3Client", // Simple S3 client in use
+		"destination_client": "S3Client", // Simple S3 client in use
 	}
 }
 

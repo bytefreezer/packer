@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/goodies/log"
+	"github.com/bytefreezer/packer/domain"
 )
 
 type TenantDatabase struct {

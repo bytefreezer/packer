@@ -2,15 +2,15 @@ package services
 
 import (
 	"context"
-	"github.com/bytedance/sonic"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/packer/storage"
-	"github.com/bytefreezer/goodies/log"
 )
 
 // MetadataManagerV2 handles Parquet metadata with Control Service API
@@ -266,12 +266,12 @@ func (mm *MetadataManagerV2) uploadMetadataToS3(ctx context.Context, s3Dest *dom
 
 	// Prepare metadata
 	metadata := map[string]string{
-		"Content-Type":     "application/json",
-		"X-Generated-By":   "bytefreezer-packer-v2",
-		"X-Generated-At":   time.Now().UTC().Format(time.RFC3339),
-		"X-Tenant-ID":      tenantID,
-		"X-Dataset-ID":     datasetID,
-		"X-File-Count":     "0", // Would be populated with actual count
+		"Content-Type":   "application/json",
+		"X-Generated-By": "bytefreezer-packer-v2",
+		"X-Generated-At": time.Now().UTC().Format(time.RFC3339),
+		"X-Tenant-ID":    tenantID,
+		"X-Dataset-ID":   datasetID,
+		"X-File-Count":   "0", // Would be populated with actual count
 	}
 
 	// Upload to S3
@@ -301,16 +301,16 @@ func (mm *MetadataManagerV2) updateGenerationStatus(ctx context.Context, tenantI
 	schemaHash := storage.CalculateSchemaHash(fmt.Sprintf("%s:%s:%s", tenantID, datasetID, partitionPath))
 
 	status := &storage.MetadataGenerationStatus{
-		TenantID:            tenantID,
-		DatasetID:           datasetID,
-		PartitionPath:       partitionPath,
-		LastGeneratedAt:     time.Now(),
-		FileCount:           summary.FileCount,
-		TotalRows:           summary.TotalRows,
-		TotalSizeBytes:      summary.TotalSizeBytes,
-		NeedsRegeneration:   false,
-		CurrentSchemaHash:   schemaHash,
-		SchemaVersion:       1,
+		TenantID:          tenantID,
+		DatasetID:         datasetID,
+		PartitionPath:     partitionPath,
+		LastGeneratedAt:   time.Now(),
+		FileCount:         summary.FileCount,
+		TotalRows:         summary.TotalRows,
+		TotalSizeBytes:    summary.TotalSizeBytes,
+		NeedsRegeneration: false,
+		CurrentSchemaHash: schemaHash,
+		SchemaVersion:     1,
 	}
 
 	return mm.metadataClient.UpdateGenerationStatus(ctx, status)

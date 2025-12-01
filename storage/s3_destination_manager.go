@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/goodies/log"
+	"github.com/bytefreezer/packer/domain"
 )
 
 // S3DestinationManager manages lazy S3 destination connections per tenant:dataset

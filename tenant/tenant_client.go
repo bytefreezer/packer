@@ -10,8 +10,8 @@ import (
 
 	"github.com/bytedance/sonic"
 	client "github.com/bytefreezer/goodies/control-client"
-	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/goodies/log"
+	"github.com/bytefreezer/packer/domain"
 )
 
 // AppConfig represents application configuration

@@ -14,11 +14,11 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/api"
 	"github.com/bytefreezer/packer/config"
 	"github.com/bytefreezer/packer/services"
 	"github.com/bytefreezer/packer/storage"
-	"github.com/bytefreezer/goodies/log"
 	"github.com/pkg/errors"
 )
 
@@ -495,11 +495,11 @@ func buildHealthConfiguration(conf *config.Config, instanceAPI string) map[strin
 			"secret_key":  maskSensitive(conf.S3Source.SecretKey),
 		},
 		"parquet": map[string]interface{}{
-			"max_file_size_mb":  conf.Parquet.MaxFileSizeMB,
-			"timeout_seconds":   conf.Parquet.TimeoutSeconds,
-			"compression":       conf.Parquet.Compression,
-			"keep_source":       conf.Parquet.KeepSource,
-			"streaming_mode":    conf.Parquet.StreamingMode,
+			"max_file_size_mb": conf.Parquet.MaxFileSizeMB,
+			"timeout_seconds":  conf.Parquet.TimeoutSeconds,
+			"compression":      conf.Parquet.Compression,
+			"keep_source":      conf.Parquet.KeepSource,
+			"streaming_mode":   conf.Parquet.StreamingMode,
 		},
 		"housekeeping": map[string]interface{}{
 			"enabled":          conf.Housekeeping.Enabled,

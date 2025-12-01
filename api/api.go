@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/config"
 	"github.com/bytefreezer/packer/services"
-	"github.com/bytefreezer/goodies/log"
 	"github.com/swaggest/openapi-go/openapi3"
 	"github.com/swaggest/rest/web"
 	swgui "github.com/swaggest/swgui/v5emb"

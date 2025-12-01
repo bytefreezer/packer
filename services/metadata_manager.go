@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/packer/storage"
-	"github.com/bytefreezer/goodies/log"
 )
 
 // MetadataManager handles Parquet metadata file generation and updates
@@ -141,11 +141,11 @@ func (mm *MetadataManager) generateAndUploadMetadataFile(ctx context.Context, te
 	log.Debugf("Uploading %s to S3: bucket=%s key=%s size=%d bytes", metadataFileName, s3Dest.BucketName, metadataKey, len(metadataContent))
 
 	metadata := map[string]string{
-		"Content-Type":     "application/octet-stream",
-		"X-Parquet-Files":  fmt.Sprintf("%d", len(parquetFiles)),
-		"X-Generated-By":   "bytefreezer-packer",
-		"X-Generated-At":   time.Now().UTC().Format(time.RFC3339),
-		"X-Include-Stats":  fmt.Sprintf("%v", includeStatistics),
+		"Content-Type":    "application/octet-stream",
+		"X-Parquet-Files": fmt.Sprintf("%d", len(parquetFiles)),
+		"X-Generated-By":  "bytefreezer-packer",
+		"X-Generated-At":  time.Now().UTC().Format(time.RFC3339),
+		"X-Include-Stats": fmt.Sprintf("%v", includeStatistics),
 	}
 
 	// Get S3 client for this tenant:dataset

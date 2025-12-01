@@ -96,9 +96,9 @@ func (c *ControlAPILockClient) TestConnection() error {
 // AcquireLock attempts to acquire a lock for a tenant
 func (c *ControlAPILockClient) AcquireLock(ctx context.Context, tenantID, instanceID string, lockDuration time.Duration) (*TenantLock, error) {
 	body := map[string]interface{}{
-		"tenant_id":              tenantID,
-		"locked_by":              instanceID,
-		"lock_duration_seconds":  int(lockDuration.Seconds()),
+		"tenant_id":             tenantID,
+		"locked_by":             instanceID,
+		"lock_duration_seconds": int(lockDuration.Seconds()),
 	}
 
 	resp, err := c.doRequest(ctx, "POST", "/api/v1/packer/locks/tenants", body)

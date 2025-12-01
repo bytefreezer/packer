@@ -89,7 +89,6 @@ type S3ConfigMasked struct {
 	Ssl        bool   `json:"ssl"`
 }
 
-
 type ProcessedFilesConfigMasked struct {
 	TableName string    `json:"table_name"`
 	Region    string    `json:"region"`
@@ -149,18 +148,18 @@ type JobRequest struct {
 
 // ProcessingStatsResponse represents comprehensive processing statistics
 type ProcessingStatsResponse struct {
-	Spool     map[string]int         `json:"spool"`
+	Spool      map[string]int         `json:"spool"`
 	UploadPool map[string]interface{} `json:"upload_pool,omitempty"`
-	Timestamp string                 `json:"timestamp"`
+	Timestamp  string                 `json:"timestamp"`
 }
 
 // JobListResponse represents a list of jobs
 type JobListResponse struct {
-	Message   string                 `json:"message"`
-	Filter    string                 `json:"filter,omitempty"`
-	Stats     map[string]int         `json:"stats"`
-	Timestamp string                 `json:"timestamp"`
-	Note      string                 `json:"note,omitempty"`
+	Message   string         `json:"message"`
+	Filter    string         `json:"filter,omitempty"`
+	Stats     map[string]int `json:"stats"`
+	Timestamp string         `json:"timestamp"`
+	Note      string         `json:"note,omitempty"`
 }
 
 // DLQJobsResponse represents jobs in the dead letter queue

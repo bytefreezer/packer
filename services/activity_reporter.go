@@ -26,20 +26,20 @@ type ActivityReporter struct {
 
 // OperationProgress tracks a single operation's progress
 type OperationProgress struct {
-	OperationID     string
-	TenantID        string
-	DatasetID       string
-	OperationType   string
-	ProgressCurrent int64
-	ProgressTotal   int64
-	ProgressUnit    string
-	ProgressMessage string
-	InputBytes      int64
-	OutputBytes     int64
+	OperationID      string
+	TenantID         string
+	DatasetID        string
+	OperationType    string
+	ProgressCurrent  int64
+	ProgressTotal    int64
+	ProgressUnit     string
+	ProgressMessage  string
+	InputBytes       int64
+	OutputBytes      int64
 	RecordsProcessed int64
-	ErrorCount      int
-	StartedAt       time.Time
-	LastReported    time.Time
+	ErrorCount       int
+	StartedAt        time.Time
+	LastReported     time.Time
 }
 
 // OperationUpdate is sent to control service

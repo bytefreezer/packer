@@ -80,7 +80,7 @@ func NewS3Client(s3Config S3Config) (*S3Client, error) {
 			o.BaseEndpoint = aws.String(fmt.Sprintf("http%s://%s",
 				map[bool]string{true: "s", false: ""}[s3Config.Ssl],
 				s3Config.Endpoint))
-			o.UsePathStyle = true // Required for MinIO and some custom S3 implementations
+			o.UsePathStyle = true                              // Required for MinIO and some custom S3 implementations
 			o.DisableLogOutputChecksumValidationSkipped = true // Suppress MinIO checksum warnings
 		})
 	} else {

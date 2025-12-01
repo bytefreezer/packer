@@ -4,16 +4,16 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"github.com/bytedance/sonic"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"io"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/goodies/log"
+	"github.com/bytefreezer/packer/domain"
 
 	"github.com/apache/arrow/go/v18/parquet"
 	"github.com/apache/arrow/go/v18/parquet/file"
@@ -29,28 +29,28 @@ type ParquetMetadataExtractor struct {
 
 // ParquetSchema represents a simplified Parquet schema
 type ParquetSchema struct {
-	Type    string                    `json:"type"`
-	Fields  []ParquetField           `json:"fields"`
-	Metadata map[string]string       `json:"metadata,omitempty"`
+	Type     string            `json:"type"`
+	Fields   []ParquetField    `json:"fields"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // ParquetField represents a field in the Parquet schema
 type ParquetField struct {
-	Name        string                 `json:"name"`
-	Type        string                 `json:"type"`
-	Nullable    bool                   `json:"nullable"`
-	Children    []ParquetField         `json:"children,omitempty"`
-	Metadata    map[string]string      `json:"metadata,omitempty"`
+	Name     string            `json:"name"`
+	Type     string            `json:"type"`
+	Nullable bool              `json:"nullable"`
+	Children []ParquetField    `json:"children,omitempty"`
+	Metadata map[string]string `json:"metadata,omitempty"`
 }
 
 // ParquetColumnStats represents statistics for a Parquet column
 type ParquetColumnStats struct {
-	ColumnName   string      `json:"column_name"`
-	MinValue     interface{} `json:"min_value,omitempty"`
-	MaxValue     interface{} `json:"max_value,omitempty"`
-	NullCount    int64       `json:"null_count"`
-	DistinctCount int64      `json:"distinct_count,omitempty"`
-	DataType     string      `json:"data_type"`
+	ColumnName    string      `json:"column_name"`
+	MinValue      interface{} `json:"min_value,omitempty"`
+	MaxValue      interface{} `json:"max_value,omitempty"`
+	NullCount     int64       `json:"null_count"`
+	DistinctCount int64       `json:"distinct_count,omitempty"`
+	DataType      string      `json:"data_type"`
 }
 
 // NewParquetMetadataExtractor creates a new metadata extractor
@@ -156,43 +156,43 @@ func (pme *ParquetMetadataExtractor) ExtractFileMetadataWithParquetReader(ctx co
 	// Example with segmentio/parquet-go:
 
 	/*
-	// Get S3 client
-	s3Client, err := pme.s3DestinationManager.GetS3Client(tenantID, datasetID, s3Dest)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get S3 client: %w", err)
-	}
-
-	// Open the Parquet file
-	reader, err := s3Client.GetObjectReader(ctx, filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open Parquet file: %w", err)
-	}
-	defer reader.Close()
-
-	// Create Parquet reader
-	parquetReader, err := parquet.NewReader(reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Parquet reader: %w", err)
-	}
-
-	// Extract schema
-	schema := parquetReader.Schema()
-
-	// Extract row count
-	numRows := parquetReader.NumRows()
-
-	// Extract column statistics
-	columnStats := make([]ParquetColumnStats, 0)
-	for _, field := range schema.Fields() {
-		stats := ParquetColumnStats{
-			ColumnName: field.Name(),
-			DataType:   field.Type().String(),
-			NullCount:  0, // Would extract from Parquet metadata
+		// Get S3 client
+		s3Client, err := pme.s3DestinationManager.GetS3Client(tenantID, datasetID, s3Dest)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get S3 client: %w", err)
 		}
-		columnStats = append(columnStats, stats)
-	}
 
-	// Continue with rest of implementation...
+		// Open the Parquet file
+		reader, err := s3Client.GetObjectReader(ctx, filePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open Parquet file: %w", err)
+		}
+		defer reader.Close()
+
+		// Create Parquet reader
+		parquetReader, err := parquet.NewReader(reader)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Parquet reader: %w", err)
+		}
+
+		// Extract schema
+		schema := parquetReader.Schema()
+
+		// Extract row count
+		numRows := parquetReader.NumRows()
+
+		// Extract column statistics
+		columnStats := make([]ParquetColumnStats, 0)
+		for _, field := range schema.Fields() {
+			stats := ParquetColumnStats{
+				ColumnName: field.Name(),
+				DataType:   field.Type().String(),
+				NullCount:  0, // Would extract from Parquet metadata
+			}
+			columnStats = append(columnStats, stats)
+		}
+
+		// Continue with rest of implementation...
 	*/
 
 	// For now, fall back to the simplified version
@@ -236,7 +236,6 @@ func (pme *ParquetMetadataExtractor) calculateFileChecksum(filePath string, size
 	return fmt.Sprintf("%x", hash)
 }
 
-
 // GenerateMetadataFile generates a Parquet metadata file from database metadata
 func (pme *ParquetMetadataExtractor) GenerateMetadataFile(files []*ParquetFileMetadata, includeStatistics bool) ([]byte, error) {
 	if len(files) == 0 {
@@ -277,14 +276,14 @@ func (pme *ParquetMetadataExtractor) GenerateMetadataFile(files []*ParquetFileMe
 
 	// Create metadata structure
 	metadata := map[string]interface{}{
-		"version": 1,
-		"schema":  schema,
-		"num_rows": totalRows,
-		"total_size_bytes": totalSize,
-		"file_count": len(files),
-		"files": fileList,
-		"generated_by": "bytefreezer-packer",
-		"generated_at": time.Now().UTC().Format(time.RFC3339),
+		"version":            1,
+		"schema":             schema,
+		"num_rows":           totalRows,
+		"total_size_bytes":   totalSize,
+		"file_count":         len(files),
+		"files":              fileList,
+		"generated_by":       "bytefreezer-packer",
+		"generated_at":       time.Now().UTC().Format(time.RFC3339),
 		"include_statistics": includeStatistics,
 	}
 
@@ -421,6 +420,7 @@ func (pme *ParquetMetadataExtractor) MergeSchemas(schemas []string) (*ParquetSch
 
 	return mergedSchema, nil
 }
+
 // extractSchemaFromParquetFile extracts the actual schema from a Parquet file
 func (pme *ParquetMetadataExtractor) extractSchemaFromParquetFile(reader *file.Reader) (*ParquetSchema, error) {
 	schema := &ParquetSchema{

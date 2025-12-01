@@ -58,16 +58,16 @@ type ParquetFileMetadata struct {
 
 // MetadataGenerationStatus tracks metadata generation for partitions
 type MetadataGenerationStatus struct {
-	TenantID            string    `json:"tenant_id"`
-	DatasetID           string    `json:"dataset_id"`
-	PartitionPath       string    `json:"partition_path"`
-	LastGeneratedAt     time.Time `json:"last_generated_at"`
-	FileCount           int       `json:"file_count"`
-	TotalRows           int64     `json:"total_rows"`
-	TotalSizeBytes      int64     `json:"total_size_bytes"`
-	NeedsRegeneration   bool      `json:"needs_regeneration"`
-	CurrentSchemaHash   string    `json:"current_schema_hash"`
-	SchemaVersion       int       `json:"schema_version"`
+	TenantID          string    `json:"tenant_id"`
+	DatasetID         string    `json:"dataset_id"`
+	PartitionPath     string    `json:"partition_path"`
+	LastGeneratedAt   time.Time `json:"last_generated_at"`
+	FileCount         int       `json:"file_count"`
+	TotalRows         int64     `json:"total_rows"`
+	TotalSizeBytes    int64     `json:"total_size_bytes"`
+	NeedsRegeneration bool      `json:"needs_regeneration"`
+	CurrentSchemaHash string    `json:"current_schema_hash"`
+	SchemaVersion     int       `json:"schema_version"`
 }
 
 // ParquetMetadataSummary provides aggregated metadata information

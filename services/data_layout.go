@@ -67,7 +67,7 @@ func (dlm *DataLayoutManager) GenerateSecureLayout(tenant *domain.Tenant, datase
 	layout.DatasetDirectory = dlm.generateSecureDatasetDirectory(dataset)
 
 	// Step 3: Get partitioning scheme
-	partitionScheme := "hive"  // Default to hive for backward compatibility
+	partitionScheme := "hive" // Default to hive for backward compatibility
 	var customPattern string
 	if dataset.ProcessingConfig != nil && dataset.ProcessingConfig.PartitioningScheme != "" {
 		partitionScheme = dataset.ProcessingConfig.PartitioningScheme
@@ -280,6 +280,3 @@ func (dlm *DataLayoutManager) validateLayoutSecurity(layout *DataLayout) error {
 
 	return nil
 }
-
-
-

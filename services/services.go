@@ -113,4 +113,3 @@ func (s *Services) CheckLockingConnectivity() error {
 
 	return errors.New("no lock client configured")
 }
-

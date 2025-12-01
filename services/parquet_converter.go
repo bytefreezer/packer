@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
-	"github.com/bytedance/sonic"
 	"fmt"
+	"github.com/bytedance/sonic"
 	"io"
 	"os"
 	"path/filepath"
@@ -18,9 +18,9 @@ import (
 	"github.com/apache/arrow/go/v18/parquet"
 	"github.com/apache/arrow/go/v18/parquet/compress"
 	"github.com/apache/arrow/go/v18/parquet/pqarrow"
+	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/packer/storage"
-	"github.com/bytefreezer/goodies/log"
 )
 
 type ParquetConverter struct {
