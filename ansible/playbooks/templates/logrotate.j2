@@ -1,0 +1,21 @@
+{{ paths.log_dir }}/*.log {
+    daily
+    missingok
+    rotate {{ logrotate.rotate_count }}
+    compress
+    delaycompress
+    notifempty
+    create 0644 {{ service.user }} {{ service.group }}
+
+    postrotate
+        if systemctl is-active {{ service.name }} >/dev/null 2>&1; then
+            systemctl reload {{ service.name }}
+        fi
+    endscript
+
+    # Handle specific log files
+    {{ paths.log_dir }}/{{ service.name }}.log
+    {{ paths.log_dir }}/{{ service.name }}-error.log
+
+    sharedscripts
+}

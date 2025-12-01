@@ -1,0 +1,140 @@
+---
+# ByteFreezer Packer - Centralized Variables Configuration
+
+# GitHub repository
+github_repo: "bytefreezer/packer"
+version: "{{ bytefreezer_packer_version | default('latest') }}"
+
+# Service configuration
+service:
+  name: "bytefreezer-packer"
+  user: "root"
+  group: "root"
+
+# File paths
+paths:
+  binary_dir: "/usr/local/bin"
+  binary_path: "/usr/local/bin/bytefreezer-packer"
+  config_dir: "/etc/bytefreezer-packer"
+  config_path: "/etc/bytefreezer-packer/config.yaml"
+  log_dir: "/var/log/bytefreezer-packer"
+  cache_dir: "/var/cache/bytefreezer-packer"
+  spool_dir: "/var/spool/bytefreezer-packer"
+  service_path: "/etc/systemd/system/bytefreezer-packer.service"
+  logrotate_path: "/etc/logrotate.d/bytefreezer-packer"
+
+# Log rotation settings
+logrotate:
+  rotate_count: 7
+
+# Application configuration
+config:
+  app:
+    name: "bytefreezer-packer"
+    version: "1.0.0"
+    deployment_type: "on_prem"
+
+  logging:
+    level: "info"
+    encoding: "console"
+
+  server:
+    api_port: 8083
+
+  bytefreezer:
+    cache_path: "/var/cache/bytefreezer-packer"
+    spool_path: "/var/spool/bytefreezer-packer"
+
+  # Control Service configuration (replaces dev mode and legacy controller)
+  control_service:
+    enabled: true
+    base_url: "http://192.168.86.103:8082"
+    api_key: "bytefreezer-service-api-key-8f4a2d1b-3c5e-4f6a-9b8c-7d2e1f3a4b5c"
+    timeout_seconds: 30
+
+  otel:
+    enabled: true
+    service_name: "bytefreezer-packer"
+    scrapeintervalseconds: 15
+    # Prometheus mode - expose metrics on HTTP endpoint for scraping
+    prometheus_mode: true
+    metrics_port: 9093
+    # Bind to all interfaces for external scraping
+    metrics_host: "0.0.0.0"
+
+  housekeeping:
+    enabled: true
+    intervalseconds: 300
+    cleanup:
+      enabled: true
+      processing_dir_max_age_hours: 2
+      orphaned_files_max_age_hours: 24
+
+  # S3 source configuration - where compressed NDJSON files are read from (On-prem deployment)
+  s3source:
+    bucket_name: "piper-onprem"
+    region: "us-east-1"
+    endpoint: "192.168.86.125:9000"
+    ssl: false
+    access_key: "AKIAQNXBAHUKIMJP26P6"
+    secret_key: "SECRET_KEY_AKIAQNXBAHUKIMJP26P6"
+    use_iam_role: false
+
+  # S3 destination configuration removed - now using per-tenant:dataset destinations
+
+  # Parquet processing configuration
+  parquet:
+    max_file_size_mb: 64          # Target larger files for better compression
+    timeout_seconds: 1200         # Longer timeout to accumulate more data (20min = 1200s max latency)
+    compression: "zstd"           # Compression algorithm (zstd is best for 2025)
+    keep_source: false            # Whether to keep source files after processing
+    streaming_mode: true          # Enable streaming processing (no intermediate files)
+    memory_buffer_mb: 64          # Larger memory buffer for bigger files
+    checkpoint_records: 100000    # Higher checkpoint for fewer interruptions
+    atomic_upload: true           # Use temporary files for atomic uploads
+
+  # Upload pool configuration
+  uploadpool:
+    worker_count: 5
+    cleanup_source_files: true
+
+  # Tenant and dataset failure tracking removed - functionality disabled
+
+  soc:
+    enabled: false
+
+  dev: false  # Disabled - using Control Service (see control_service above)
+
+  # Health reporting configuration for service registration and monitoring
+  # Uses the same control_url as control_service above
+  health_reporting:
+    enabled: true
+    control_url: "http://192.168.86.103:8082"
+    report_interval: 30
+    timeout_seconds: 10
+    register_on_startup: true
+
+  # Error tracking configuration for centralized error monitoring
+  # Note: Uses control_service.base_url for the control service endpoint
+  error_tracking:
+    enabled: true  # Enable by default to collect errors from packer service
+
+# Download configuration
+download:
+  url: "https://github.com/{{ github_repo }}/releases/{{ 'latest/download' if version == 'latest' else 'download/' + version }}/bytefreezer-packer-linux-amd64.tar.gz"
+
+# Docker image configuration for docker_install.yml
+docker:
+  image_name: "ghcr.io/bytefreezer/packer"
+  tag: "{{ bytefreezer_packer_version | default('latest') }}"
+  force_pull: false  # Set to true to always pull latest image
+
+# Remove configuration
+remove:
+  cache_dir: "{{ bytefreezer_packer_remove_cache_dir | default(false) }}"
+  spool_dir: "{{ bytefreezer_packer_remove_spool_dir | default(false) }}"
+
+# AWX Survey Variables (Override via job template surveys)
+force_reinstall: "{{ force_reinstall | default(false) }}"
+skip_validation: "{{ skip_validation | default(false) }}"
+enable_debug_logging: "{{ enable_debug_logging | default(false) }}"

@@ -1,0 +1,456 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+
+env:
+  GO_VERSION: '1.24.4'
+  BINARY_NAME: 'bytefreezer-packer'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  test:
+    name: Test on Main Branch
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run tests
+      run: go test -v -race -coverprofile=coverage.out ./...
+
+    - name: Run go vet
+      run: go vet ./...
+
+    - name: Run go fmt check
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          echo "The following files need formatting:"
+          gofmt -s -l .
+          exit 1
+        fi
+
+    - name: Install staticcheck
+      run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+    - name: Run staticcheck
+      run: staticcheck ./...
+
+  build:
+    name: Build Binaries
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [linux]
+        arch: [amd64]
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: ${{ env.GO_VERSION }}
+
+    - name: Cache Go modules
+      uses: actions/cache@v4
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Build binary
+      env:
+        GOOS: ${{ matrix.os }}
+        GOARCH: ${{ matrix.arch }}
+        CGO_ENABLED: 0
+      run: |
+        VERSION=${GITHUB_REF_NAME#v}
+        if [ "${{ github.ref_type }}" != "tag" ]; then
+          VERSION="main-${GITHUB_SHA:0:8}"
+        fi
+        BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+        
+        go build \
+          -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" \
+          -o ${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.arch }} .
+
+    - name: Create tarball
+      run: |
+        mkdir -p release
+        tar -czf release/${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz \
+          ${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.arch }} \
+          config.yaml \
+          README.md
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.arch }}
+        path: release/${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+
+  docker:
+    name: Build Docker Image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}
+        tags: |
+          type=ref,event=branch
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=semver,pattern={{major}}
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        platforms: linux/amd64
+        push: true
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        build-args: |
+          VERSION=${{ github.ref_name }}
+          BUILD_TIME=${{ github.event.head_commit.timestamp }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  debian:
+    name: Build Debian Package
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download Linux binary artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: bytefreezer-packer-linux-amd64
+        path: ./binary
+
+    - name: Extract binary from tarball
+      run: |
+        cd binary
+        tar -xzf *.tar.gz
+        chmod +x bytefreezer-packer-linux-amd64
+
+    - name: Install FPM for package building
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ruby-dev build-essential
+        sudo gem install fpm
+
+    - name: Create Debian package structure
+      run: |
+        VERSION=${GITHUB_REF_NAME#v}
+        PACKAGE_NAME="bytefreezer-packer"
+        ARCH="amd64"
+        
+        # Create package directories
+        mkdir -p pkg/{usr/local/bin,etc/bytefreezer-packer,etc/systemd/system,etc/logrotate.d,var/log/bytefreezer-packer,var/spool/bytefreezer-packer}
+        
+        # Copy binary
+        cp binary/bytefreezer-packer-linux-amd64 pkg/usr/local/bin/bytefreezer-packer
+        chmod +x pkg/usr/local/bin/bytefreezer-packer
+        
+        # Copy config
+        cp config.yaml pkg/etc/bytefreezer-packer/config.yaml
+        
+        # Create systemd service file
+        cat > pkg/etc/systemd/system/bytefreezer-packer.service << 'EOF'
+        [Unit]
+        Description=ByteFreezer Packer - Data Processing and S3 Management Service
+        Documentation=https://github.com/bytefreezer/packer
+        After=network-online.target
+        Wants=network-online.target
+        
+        [Service]
+        Type=simple
+        User=root
+        Group=root
+        WorkingDirectory=/usr/local/bin
+        ExecStart=/usr/local/bin/bytefreezer-packer --config="/etc/bytefreezer-packer/config.yaml"
+        ExecReload=/bin/kill -HUP $MAINPID
+        KillMode=mixed
+        KillSignal=SIGTERM
+        TimeoutStopSec=30
+        
+        # Restart settings
+        Restart=always
+        RestartSec=10
+        StartLimitInterval=60
+        StartLimitBurst=5
+        
+        # Resource limits
+        LimitNOFILE=65536
+        LimitNPROC=4096
+        
+        # Logging to files
+        StandardOutput=append:/var/log/bytefreezer-packer/bytefreezer-packer.log
+        StandardError=append:/var/log/bytefreezer-packer/bytefreezer-packer-error.log
+        
+        # Environment
+        Environment=CONFIG_FILE=/etc/bytefreezer-packer/config.yaml
+        Environment=LOG_LEVEL=INFO
+        
+        [Install]
+        WantedBy=multi-user.target
+        EOF
+        
+        # Create logrotate configuration
+        cat > pkg/etc/logrotate.d/bytefreezer-packer << 'EOF'
+        /var/log/bytefreezer-packer/*.log {
+          daily
+          rotate 7
+          compress
+          missingok
+          notifempty
+          create 0644 root root
+          sharedscripts
+          postrotate
+            systemctl restart bytefreezer-packer >/dev/null 2>&1 || true
+          endscript
+        }
+        EOF
+
+    - name: Create post-install script
+      run: |
+        mkdir -p debian
+        cat > debian/postinst << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        # Ensure directories exist with correct permissions
+        mkdir -p /var/log/bytefreezer-packer
+        mkdir -p /var/spool/bytefreezer-packer
+        chmod 755 /var/log/bytefreezer-packer
+        chmod 755 /var/spool/bytefreezer-packer
+        
+        # Reload systemd and enable service
+        systemctl daemon-reload || true
+        systemctl enable bytefreezer-packer || true
+        
+        echo "ByteFreezer Packer installed successfully!"
+        echo "Configure /etc/bytefreezer-packer/config.yaml and run: systemctl start bytefreezer-packer"
+        EOF
+        chmod +x debian/postinst
+
+    - name: Create pre-remove script  
+      run: |
+        cat > debian/prerm << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        # Stop service before removal
+        systemctl stop bytefreezer-packer || true
+        systemctl disable bytefreezer-packer || true
+        EOF
+        chmod +x debian/prerm
+
+    - name: Create post-remove script
+      run: |
+        cat > debian/postrm << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        # Clean up after removal
+        systemctl daemon-reload || true
+        
+        # Note: Keeping log and spool directories for data preservation
+        echo "ByteFreezer Packer removed. Log and spool directories preserved."
+        EOF
+        chmod +x debian/postrm
+
+    - name: Rebuild package with scripts
+      run: |
+        VERSION=${GITHUB_REF_NAME#v}
+        PACKAGE_NAME="bytefreezer-packer"
+        
+        # Remove old package
+        rm -f *.deb
+        
+        fpm -s dir -t deb \
+          -n "$PACKAGE_NAME" \
+          -v "$VERSION" \
+          -a amd64 \
+          -m "ByteFreezer <noreply@bytefreezer.io>" \
+          --description "ByteFreezer Packer - Data Processing and S3 Management Service" \
+          --url "https://github.com/bytefreezer/packer" \
+          --license "MIT" \
+          --category "utils" \
+          --depends "systemd" \
+          --after-install debian/postinst \
+          --before-remove debian/prerm \
+          --after-remove debian/postrm \
+          -C pkg \
+          .
+
+    - name: Upload Debian package artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: debian-package
+        path: "*.deb"
+
+  release:
+    name: Create Release
+    needs: [build, docker, debian]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: ./artifacts
+
+    - name: Create Release with Assets
+      uses: softprops/action-gh-release@v2
+      with:
+        tag_name: ${{ github.ref_name }}
+        name: Release ${{ github.ref_name }}
+        draft: false
+        prerelease: ${{ contains(github.ref_name, '-') }}
+        files: |
+          ./artifacts/*/*.tar.gz
+          ./artifacts/*/*.deb
+        generate_release_notes: true
+        body: |
+          ## 🚀 ByteFreezer Packer ${{ github.ref_name }}
+          
+          ### 📦 Installation
+          
+          **Debian/Ubuntu Package (Recommended):**
+          ```bash
+          # Download and install the .deb package  
+          VERSION=${{ github.ref_name }}
+          VERSION=${VERSION#v}
+          wget https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/bytefreezer-packer_${VERSION}_amd64.deb
+          sudo dpkg -i bytefreezer-packer_*.deb
+          
+          # Configure and start
+          sudo nano /etc/bytefreezer-packer/config.yaml
+          sudo systemctl start bytefreezer-packer
+          sudo systemctl status bytefreezer-packer
+          ```
+          
+          **Docker:**
+          ```bash
+          docker pull ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}:${{ github.ref_name }}
+          docker run -p 8080:8080 -p 9099:9099 -v $(pwd)/config.yaml:/config.yaml ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}:${{ github.ref_name }}
+          ```
+          
+          **Binary Extraction from Container:**
+          ```bash
+          # Extract binary from container for direct use
+          docker run --rm -v $(pwd):/output ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}:${{ github.ref_name }} sh -c "cp /bytefreezer-packer /output/"
+          chmod +x bytefreezer-packer
+          ./bytefreezer-packer --config config.yaml
+          ```
+                 
+          **Quick Start:**
+          ```bash
+          # Download sample config
+          wget https://raw.githubusercontent.com/${{ github.repository }}/main/config.yaml
+          
+          # Run with Docker
+          docker run -p 8080:8080 -p 9099:9099 -v $(pwd)/config.yaml:/config.yaml ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}:${{ github.ref_name }}
+          ```
+          
+          ### 🎯 Production Deployment
+          
+          **Ansible (Recommended for Production):**
+          ```bash
+          # Clone repository
+          git clone https://github.com/${{ github.repository }}.git
+          cd bytefreezer-packer/ansible
+          
+          # Configure your inventory and variables
+          ansible-playbook -i inventory.yml playbooks/install.yml
+          ```
+          
+          
+          **Docker Compose:**
+          ```yaml
+          version: '3.8'
+          services:
+            bytefreezer-packer:
+              image: ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}:${{ github.ref_name }}
+              ports:
+                - "8080:8080"  # API port
+                - "9099:9099"  # Metrics port
+              volumes:
+                - ./config.yaml:/config.yaml
+                - ./logs:/var/log/bytefreezer-packer
+              restart: unless-stopped
+          ```
+          
+          ### 📚 Documentation
+          
+          - [Configuration Guide](config.yaml)
+          - [API Documentation](http://localhost:8080/swagger-ui/) (when running)
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  notify:
+    name: Deployment Notification
+    needs: [release]
+    runs-on: ubuntu-latest
+    if: always() && startsWith(github.ref, 'refs/tags/v')
+    steps:
+    - name: Notify success
+      if: needs.release.result == 'success'
+      run: |
+        echo "✅ ByteFreezer Packer ${{ github.ref_name }} released successfully!"
+        echo "Docker image: ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}:${{ github.ref_name }}"
+        echo "Release URL: https://github.com/${{ github.repository }}/releases/tag/${{ github.ref_name }}"
+
+    - name: Notify failure
+      if: needs.release.result == 'failure'
+      run: |
+        echo "❌ ByteFreezer Packer ${{ github.ref_name }} release failed!"
+        exit 1

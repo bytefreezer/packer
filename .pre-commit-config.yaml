@@ -1,0 +1,39 @@
+repos:
+  - repo: local
+    hooks:
+      - id: go-fmt
+        name: Go Format
+        entry: gofmt
+        language: system
+        args: ['-s', '-l', '.']
+        pass_filenames: false
+        
+      - id: go-vet
+        name: Go Vet
+        entry: go
+        language: system
+        args: ['vet', './...']
+        pass_filenames: false
+        
+      - id: go-test
+        name: Go Test
+        entry: go
+        language: system
+        args: ['test', '-v', './...']
+        pass_filenames: false
+        
+      - id: staticcheck
+        name: Staticcheck
+        entry: staticcheck
+        language: system
+        args: ['./...']
+        pass_filenames: false
+        
+      - id: gosec
+        name: Gosec Security Scanner
+        entry: gosec
+        language: system
+        args: ['-severity', 'medium', '-confidence', 'medium', '-quiet', './...']
+        pass_filenames: false
+        # Make gosec non-blocking by allowing failures
+        verbose: true

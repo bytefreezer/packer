@@ -1,0 +1,153 @@
+---
+- name: Install and configure ByteFreezer Packer service (Docker extraction method)
+  hosts: all
+  become: yes
+
+  pre_tasks:
+    - name: Check if service already exists
+      ansible.builtin.stat:
+        path: "{{ paths.service_path }}"
+      register: service_exists
+
+    - name: Fail if service already installed
+      fail:
+        msg: "ByteFreezer Packer service is already installed. Use remove playbook first."
+      when: service_exists.stat.exists
+
+    - name: Verify Docker is installed and running
+      ansible.builtin.service_facts:
+      register: services
+
+    - name: Check if Docker service exists
+      fail:
+        msg: "Docker is not installed or running. Please install Docker first."
+      when: "'docker.service' not in services.ansible_facts.services or services.ansible_facts.services['docker.service'].state != 'running'"
+
+    - name: Test Docker access
+      ansible.builtin.shell: docker info
+      register: docker_test
+      failed_when: docker_test.rc != 0
+      become: yes
+
+  tasks:
+    - name: Create temporary directory
+      ansible.builtin.tempfile:
+        state: directory
+        suffix: bytefreezer
+      register: temp_dir
+
+    - name: Pull ByteFreezer Packer Docker image
+      ansible.builtin.shell: |
+        docker pull {{ docker.image_name }}:{{ docker.tag }}
+      register: docker_pull
+      failed_when: docker_pull.rc != 0
+
+    - name: Set temporary directory permissions for Docker
+      ansible.builtin.file:
+        path: "{{ temp_dir.path }}"
+        mode: '0777'
+        state: directory
+
+    - name: Extract binary from Docker image
+      ansible.builtin.shell: |
+        docker run --rm -v {{ temp_dir.path }}:/output \
+          --user root \
+          {{ docker.image_name }}:{{ docker.tag }} \
+          sh -c "cp /bytefreezer-packer /output/bytefreezer-packer && chmod 755 /output/bytefreezer-packer"
+      register: docker_extract
+      failed_when: docker_extract.rc != 0
+
+    - name: Verify binary was extracted
+      ansible.builtin.stat:
+        path: "{{ temp_dir.path }}/bytefreezer-packer"
+      register: extracted_binary
+      failed_when: not extracted_binary.stat.exists
+
+    - name: Copy binary to destination
+      ansible.builtin.copy:
+        src: "{{ temp_dir.path }}/bytefreezer-packer"
+        dest: "{{ paths.binary_path }}"
+        mode: '0755'
+        remote_src: yes
+
+    - name: Clean up temporary directory
+      ansible.builtin.file:
+        path: "{{ temp_dir.path }}"
+        state: absent
+
+    - name: Ensure config directory exists
+      ansible.builtin.file:
+        path: "{{ paths.config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure log directory exists
+      ansible.builtin.file:
+        path: "{{ paths.log_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure cache directory exists
+      ansible.builtin.file:
+        path: "{{ paths.cache_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure spool directory exists
+      ansible.builtin.file:
+        path: "{{ paths.spool_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Generate configuration file
+      ansible.builtin.template:
+        src: templates/config.yaml.j2
+        dest: "{{ paths.config_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install logrotate configuration
+      ansible.builtin.template:
+        src: templates/logrotate.j2
+        dest: "{{ paths.logrotate_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create systemd service file
+      ansible.builtin.template:
+        src: templates/bytefreezer-packer.service.j2
+        dest: "{{ paths.service_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start service
+      ansible.builtin.systemd:
+        name: "{{ service.name }}"
+        enabled: yes
+        state: started
+        daemon_reload: true
+
+  post_tasks:
+    - name: Display installation status
+      debug:
+        msg:
+          - "ByteFreezer Packer installation completed!"
+          - "Binary: {{ paths.binary_path }}"
+          - "Config: {{ paths.config_path }}"
+          - "Logs: {{ paths.log_dir }}"
+          - "Cache: {{ paths.cache_dir }}"
+          - "Spool: {{ paths.spool_dir }}"
+          - "Installation method: Docker image extraction"
+          - "Docker image: {{ docker.image_name }}:{{ docker.tag }}"
+          - "Service: systemctl status {{ service.name }}"

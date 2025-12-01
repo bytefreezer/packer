@@ -1,0 +1,112 @@
+app:
+  name: bytefreezer-packer
+  version: 0.0.1
+
+# Logging configuration   
+logging:
+  level: debug
+  encoding: console
+
+#this is health,API, documentation end point. 
+server:
+  #api port
+  api_port: 8083
+  #other ports if needed
+
+bytefreezer:
+  #this is the bytefreezer controller endpoint for this service (deprecated - use control_service)
+  controller: http://localhost:8080/tenants
+  spool_path: ./spool  # Spool directory for queue/retry/dlq
+  cache_path: ./cache  # Cache directory for processing
+
+# Control Service configuration (replaces dev mode and legacy controller)
+control_service:
+  enabled: true
+  base_url: "http://192.168.86.103:8082"
+  api_key: "bytefreezer-service-api-key-8f4a2d1b-3c5e-4f6a-9b8c-7d2e1f3a4b5c"  # System-wide service API key
+  timeout_seconds: 30
+
+s3source:
+  bucket_name: "piper"  # Dedicated piper output bucket for bytefreezer-packer
+  region: "us-east-1"
+  access_key: "AKIAQNXBAHUKIMJP26P6"
+  secret_key: "SECRET_KEY_AKIAQNXBAHUKIMJP26P6"
+  endpoint: "192.168.86.125:9000"  # MinIO endpoint (matches receiver config)
+  ssl: false
+  use_iam_role: false
+
+s3destination:
+  bucket_name: "packer"  # Fake output bucket for bytefreezer-packer
+  region: "us-east-1"
+  access_key: "AKIAQNXBAHUKIMJP26P6"
+  secret_key: "SECRET_KEY_AKIAQNXBAHUKIMJP26P6"
+  endpoint: "192.168.86.125:9000"  # MinIO endpoint (matches receiver config)
+  ssl: false
+
+# OpenTelemetry configuration (Prometheus pickup endpoint only)
+otel:
+  enabled: true
+  metrics_port: 9093             # Prometheus metrics port
+  metrics_host: "0.0.0.0"        # Bind to all interfaces for external scraping
+
+#this is the housekeeping default configuration
+housekeeping:
+  enabled: true
+  intervalseconds: 60
+  cleanup:
+    enabled: true
+    processing_dir_max_age_hours: 2
+    orphaned_files_max_age_hours: 24
+    lock_cleanup:
+      enabled: true
+      stale_threshold_minutes: 5
+
+#SOC alert configuration for sending critical alerts
+soc:
+  enabled: false
+  endpoint: http://somehost/alerts
+  timeout_seconds: 30
+
+#Upload worker pool configuration
+uploadpool:
+  worker_count: 5
+  cleanup_source_files: true
+
+# PostgreSQL configuration (used for both distributed locking and Parquet metadata management)
+postgres:
+  host: "192.168.86.137"
+  port: 5432
+  database: "bytefreezer"
+  username: "bytefreezer"
+  password: "bytefreezer123"
+  ssl_mode: "disable"
+  schema: "public"
+  max_connections: 10
+  connection_timeout_seconds: 30
+
+# Parquet processing configuration
+parquet:
+  max_file_size_mb: 64       # Target larger files for better compression and analytics
+  timeout_seconds: 1200      # Longer timeout to accumulate more data (20min = 1200s max latency)
+  compression: "zstd"        # Compression algorithm (zstd is best for 2025)
+  keep_source: false         # Whether to keep source files after successful processing
+  streaming_mode: true       # Enable streaming processing (no intermediate files)
+  memory_buffer_mb: 64       # Larger memory buffer for bigger files
+  checkpoint_records: 100000 # Higher checkpoint for fewer interruptions
+  atomic_upload: true        # Use temporary files for atomic uploads
+
+# Health reporting configuration
+health_reporting:
+  enabled: true  # Enable health reporting to control service
+  report_interval: 30  # How often to send health reports (seconds)
+  timeout_seconds: 10  # HTTP timeout for health requests
+  register_on_startup: true  # Register service instance on startup
+
+# Error tracking configuration
+error_tracking:
+  enabled: true  # Enable error reporting to control service
+
+#development mode flag - when true, uses fake tenant data instead of calling controller API
+dev: false  # Disabled - using Control Service instead (see control_service config above)
+
+

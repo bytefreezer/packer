@@ -1,0 +1,19 @@
+version: '2.4'
+services:
+  bytefreezer-packer:
+    image: bytefreezer/bytefreezer-packer:latest
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+    volumes:
+      - /etc/bytefreezer-packer/config.yaml:/etc/app/config.yaml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://bytefreezer-packer:8080"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+    ports:
+      - 8080:8080      
+    restart: always
