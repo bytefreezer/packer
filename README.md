@@ -1310,7 +1310,9 @@ logging:
 
 ## License
 
-[Add your license information here]
+ByteFreezer is licensed under the [Elastic License 2.0](LICENSE.txt).
+
+You're free to use, modify, and self-host. You cannot offer it as a managed service.
 
 ---
 

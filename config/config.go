@@ -1,3 +1,6 @@
+// Licensed under Elastic License 2.0
+// See LICENSE.txt for details
+
 package config
 
 import (
