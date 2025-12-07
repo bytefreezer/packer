@@ -106,10 +106,9 @@ config:
   dev: false  # Disabled - using Control Service (see control_service above)
 
   # Health reporting configuration for service registration and monitoring
-  # Uses the same control_url as control_service above
+  # Note: Uses control_service.base_url for the control service endpoint
   health_reporting:
     enabled: true
-    control_url: "http://192.168.86.103:8082"
     report_interval: 30
     timeout_seconds: 10
     register_on_startup: true
