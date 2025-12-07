@@ -1,0 +1,102 @@
+---
+- name: Install and configure ByteFreezer Packer service (Demo)
+  hosts: all
+  become: yes
+  vars_files:
+    - vars/demo.yml
+
+  pre_tasks:
+    - name: Check if service already exists
+      ansible.builtin.stat:
+        path: "{{ paths.service_path }}"
+      register: service_exists
+
+    - name: Fail if service already installed
+      fail:
+        msg: "ByteFreezer Packer service is already installed. Use remove playbook first."
+      when: service_exists.stat.exists
+
+  tasks:
+
+    - name: Copy binary to destination
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/dist/bytefreezer-packer"
+        dest: "{{ paths.binary_path }}"
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure config directory exists
+      ansible.builtin.file:
+        path: "{{ paths.config_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure log directory exists
+      ansible.builtin.file:
+        path: "{{ paths.log_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure cache directory exists
+      ansible.builtin.file:
+        path: "{{ paths.cache_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Ensure spool directory exists
+      ansible.builtin.file:
+        path: "{{ paths.spool_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Generate configuration file
+      ansible.builtin.template:
+        src: templates/config.yaml.j2
+        dest: "{{ paths.config_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Install logrotate configuration
+      ansible.builtin.template:
+        src: templates/logrotate.j2
+        dest: "{{ paths.logrotate_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Create systemd service file
+      ansible.builtin.template:
+        src: templates/bytefreezer-packer.service.j2
+        dest: "{{ paths.service_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+
+    - name: Enable and start service
+      ansible.builtin.systemd:
+        name: "{{ service.name }}"
+        enabled: yes
+        state: started
+        daemon_reload: yes
+
+  post_tasks:
+    - name: Display installation status
+      debug:
+        msg:
+          - "ByteFreezer Packer installation completed!"
+          - "Binary: {{ paths.binary_path }}"
+          - "Config: {{ paths.config_path }}"
+          - "Logs: {{ paths.log_dir }}"
+          - "Cache: {{ paths.cache_dir }}"
+          - "Spool: {{ paths.spool_dir }}"
+          - "Service: systemctl status {{ service.name }}"

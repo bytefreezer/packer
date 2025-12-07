@@ -1,0 +1,81 @@
+---
+- name: Remove ByteFreezer Packer service (Demo)
+  hosts: all
+  become: yes
+  vars_files:
+    - vars/demo.yml
+
+  pre_tasks:
+    - name: Check if service exists
+      ansible.builtin.stat:
+        path: "{{ paths.service_path }}"
+      register: service_exists
+
+    - name: Display removal information
+      debug:
+        msg:
+          - "Removing ByteFreezer Packer service (Demo deployment)..."
+          - "Service exists: {{ service_exists.stat.exists }}"
+
+  tasks:
+    - name: Stop and disable service
+      ansible.builtin.shell: |
+        sudo systemctl stop {{ service.name }} || true
+        sudo systemctl disable {{ service.name }} || true
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
+      when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Remove systemd service file
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.service_path }}"
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
+      ignore_errors: yes
+
+    - name: Remove logrotate configuration
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.logrotate_path }}"
+      ignore_errors: yes
+
+    - name: Remove binary
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.binary_path }}"
+      ignore_errors: yes
+
+    - name: Remove configuration directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.config_dir }}"
+      ignore_errors: yes
+
+    - name: Remove log directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.log_dir }}"
+      ignore_errors: yes
+
+    - name: Remove cache directory (only if explicitly requested)
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.cache_dir }}"
+      when: remove.cache_dir | default(true)
+      ignore_errors: yes
+
+    - name: Remove spool directory (only if explicitly requested)
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.spool_dir }}"
+      when: remove.spool_dir | default(false)
+      ignore_errors: yes
+
+  post_tasks:
+    - name: Verify removal
+      ansible.builtin.stat:
+        path: "{{ paths.service_path }}"
+      register: service_removed
+
+    - name: Display removal status
+      debug:
+        msg:
+          - "ByteFreezer Packer removal completed!"
+          - "Service removed: {{ not service_removed.stat.exists }}"
+          - "Binary removed: {{ paths.binary_path }}"
+          - "Directories removed: {{ paths.config_dir }}, {{ paths.log_dir }}"
+          - "Cache directory preserved: {{ paths.cache_dir }} (unless remove_cache_dir=true)"
+          - "Spool directory preserved: {{ paths.spool_dir }} (unless remove_spool_dir=true)"
