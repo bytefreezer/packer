@@ -48,7 +48,7 @@ config:
   # Control Service configuration (replaces dev mode and legacy controller)
   control_service:
     enabled: true
-    base_url: "https://api.bytefreezer.com:8082"
+    base_url: "https://api.bytefreezer.com"
     api_key: "bytefreezer-service-api-key-8f4a2d1b-3c5e-4f6a-9b8c-7d2e1f3a4b5c"
     timeout_seconds: 30
 
@@ -109,7 +109,7 @@ config:
   # Uses the same control_url as control_service above
   health_reporting:
     enabled: true
-    control_url: "https://api.bytefreezer.com:8082"
+    control_url: "https://api.bytefreezer.com"
     report_interval: 30
     timeout_seconds: 10
     register_on_startup: true
