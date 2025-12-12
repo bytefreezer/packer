@@ -242,11 +242,19 @@ func (h *HealthReportingService) isServiceHealthy() bool {
 	return true
 }
 
-// generateMetrics generates service metrics
+// generateMetrics generates service metrics including system resources
 func (h *HealthReportingService) generateMetrics() map[string]interface{} {
 	metrics := map[string]interface{}{
 		"timestamp":         time.Now().Unix(),
 		"last_health_check": time.Now().UTC().Format(time.RFC3339),
+	}
+
+	// Collect system metrics (disk, CPU, memory)
+	sysMetrics := CollectSystemMetrics("/")
+	if sysMetrics != nil {
+		for k, v := range sysMetrics.ToMap() {
+			metrics[k] = v
+		}
 	}
 
 	return metrics
