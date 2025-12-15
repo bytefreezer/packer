@@ -50,6 +50,7 @@ type Config struct {
 	MetadataClient       storage.MetadataClient        `mapstructure:"-"`
 	DatasetMetricsClient *metrics.DatasetMetricsClient `mapstructure:"-"`
 	ErrorReporter        *errors.ErrorReporter         `mapstructure:"-"`
+	AccumulationClient   *storage.AccumulationClient   `mapstructure:"-"`
 }
 
 type Bytefreezer struct {
@@ -319,6 +320,23 @@ func (cfg *Config) InitializeComponents() error {
 		}
 	} else {
 		log.Info("Control API metadata not configured, using fallback metadata system")
+	}
+
+	// Initialize Control API accumulation client
+	if cfg.ControlService.BaseURL != "" {
+		accumulationClient, err := storage.NewAccumulationClient(&storage.AccumulationClientConfig{
+			BaseURL:        cfg.ControlService.BaseURL,
+			APIKey:         cfg.ControlService.APIKey,
+			TimeoutSeconds: cfg.ControlService.TimeoutSeconds,
+		})
+		if err != nil {
+			log.Warnf("Failed to initialize accumulation client: %v", err)
+		} else {
+			cfg.AccumulationClient = accumulationClient
+			log.Info("Using Control API for accumulation state management")
+		}
+	} else {
+		log.Info("Accumulation client not configured (control service not available)")
 	}
 
 	// Initialize S3 source client

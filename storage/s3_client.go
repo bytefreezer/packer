@@ -47,6 +47,15 @@ func NewS3Client(s3Config S3Config) (*S3Client, error) {
 		return nil, fmt.Errorf("S3 bucket name is required")
 	}
 
+	// Default region to us-east-1 for MinIO/custom endpoints if not specified
+	// MinIO doesn't require a specific region, but AWS SDK needs one
+	if s3Config.Region == "" {
+		s3Config.Region = "us-east-1"
+		if s3Config.Endpoint != "" {
+			log.Debugf("Defaulting region to us-east-1 for custom endpoint: %s", s3Config.Endpoint)
+		}
+	}
+
 	// Create AWS config
 	var awsCfg aws.Config
 	var err error

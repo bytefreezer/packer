@@ -42,6 +42,9 @@ type DataLayout struct {
 	PartitionScheme string
 	Timestamp       time.Time
 	IsSecure        bool // Whether this layout passes security checks
+
+	// Idempotency - hash of input files for deduplication
+	BatchHash string // Hash of input file list for idempotent uploads
 }
 
 // NewDataLayoutManager creates a new data layout manager
@@ -52,12 +55,18 @@ func NewDataLayoutManager() *DataLayoutManager {
 }
 
 // GenerateSecureLayout generates a secure data layout for a dataset with cross-tenant protection
-func (dlm *DataLayoutManager) GenerateSecureLayout(tenant *domain.Tenant, dataset *domain.Dataset, timestamp time.Time, fileType string) (*DataLayout, error) {
+// batchHash is optional - if provided, it's used for idempotent filename generation
+func (dlm *DataLayoutManager) GenerateSecureLayout(tenant *domain.Tenant, dataset *domain.Dataset, timestamp time.Time, fileType string, batchHash ...string) (*DataLayout, error) {
 	layout := &DataLayout{
 		BucketName:    dataset.S3Destination.BucketName,
 		OwnerTenantID: tenant.ID,
 		Timestamp:     timestamp,
 		IsSecure:      false,
+	}
+
+	// Use batch hash if provided for idempotent uploads
+	if len(batchHash) > 0 && batchHash[0] != "" {
+		layout.BatchHash = batchHash[0]
 	}
 
 	// Step 1: Verify bucket ownership and prevent cross-tenant contamination
@@ -87,7 +96,7 @@ func (dlm *DataLayoutManager) GenerateSecureLayout(tenant *domain.Tenant, datase
 	} else {
 		partitionPath = dlm.generatePartitionPath(partitionScheme, timestamp)
 	}
-	baseFileName := dlm.generateSecureFileName(tenant, dataset, timestamp)
+	baseFileName := dlm.generateSecureFileName(tenant, dataset, timestamp, layout.BatchHash)
 
 	// Step 5: Build complete S3 keys with tenant/dataset isolation
 	basePath := fmt.Sprintf("%s/%s", layout.TenantDirectory, layout.DatasetDirectory)
@@ -209,13 +218,20 @@ func (dlm *DataLayoutManager) applyCustomPattern(pattern string, tenant *domain.
 }
 
 // generateSecureFileName creates a secure, unique filename
-func (dlm *DataLayoutManager) generateSecureFileName(tenant *domain.Tenant, dataset *domain.Dataset, timestamp time.Time) string {
-	fileTimestamp := timestamp.Format("20060102_150405_000") // Include milliseconds
+// If batchHash is provided, uses it for idempotent naming (same input files = same output name)
+func (dlm *DataLayoutManager) generateSecureFileName(tenant *domain.Tenant, dataset *domain.Dataset, timestamp time.Time, batchHash string) string {
+	fileTimestamp := timestamp.Format("20060102_150405") // Date and time (no ms for idempotency)
 
-	// Create a content hash for additional uniqueness
-	hasher := sha256.New()
-	hasher.Write([]byte(fmt.Sprintf("%s:%s:%d", tenant.ID, dataset.ID, timestamp.UnixNano())))
-	contentHash := fmt.Sprintf("%x", hasher.Sum(nil))[:12]
+	var contentHash string
+	if batchHash != "" {
+		// Use batch hash for idempotent uploads - same input files produce same filename
+		contentHash = batchHash[:12]
+	} else {
+		// Fallback to timestamp-based hash for uniqueness
+		hasher := sha256.New()
+		hasher.Write([]byte(fmt.Sprintf("%s:%s:%d", tenant.ID, dataset.ID, timestamp.UnixNano())))
+		contentHash = fmt.Sprintf("%x", hasher.Sum(nil))[:12]
+	}
 
 	return fmt.Sprintf("%s_%s_%s_%s",
 		dlm.sanitizeDirectoryName(tenant.ID),

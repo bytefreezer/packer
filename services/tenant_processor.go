@@ -7,14 +7,16 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"fmt"
-	"github.com/bytedance/sonic"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/config"
 	"github.com/bytefreezer/packer/domain"
@@ -23,15 +25,16 @@ import (
 )
 
 type TenantProcessor struct {
-	config            *config.Config
-	instanceID        string
-	parquetConverter  *ParquetConverter
-	uploadPool        *UploadWorkerPool
-	dataLayoutManager *DataLayoutManager
-	metrics           *TenantMetrics
-	spoolManager      *SpoolManager
-	lockClient        storage.LockClient
-	activityReporter  *ActivityReporter
+	config             *config.Config
+	instanceID         string
+	parquetConverter   *ParquetConverter
+	uploadPool         *UploadWorkerPool
+	dataLayoutManager  *DataLayoutManager
+	metrics            *TenantMetrics
+	spoolManager       *SpoolManager
+	lockClient         storage.LockClient
+	activityReporter   *ActivityReporter
+	accumulationClient *storage.AccumulationClient
 }
 
 type ProcessingResult struct {
@@ -52,6 +55,10 @@ type ProcessingResult struct {
 	UploadTime       time.Duration
 	ProcessedFiles   []storage.S3Object
 	Error            error
+	// Accumulation fields
+	Skipped          bool    // True if dataset was skipped due to accumulation threshold not met
+	AccumulatedBytes int64   // Current accumulated bytes (for logging)
+	ProgressPercent  float64 // Progress toward threshold (for logging)
 }
 
 func NewTenantProcessor(cfg *config.Config, spoolManager *SpoolManager, lockClient storage.LockClient) (*TenantProcessor, error) {
@@ -97,15 +104,16 @@ func NewTenantProcessor(cfg *config.Config, spoolManager *SpoolManager, lockClie
 	uploadPool := NewUploadWorkerPool(cfg, cfg.S3DestinationManager, metadataManager, workerCount, tenantMetrics)
 
 	return &TenantProcessor{
-		config:            cfg,
-		instanceID:        instanceID,
-		parquetConverter:  NewParquetConverter(),
-		uploadPool:        uploadPool,
-		dataLayoutManager: NewDataLayoutManager(),
-		metrics:           tenantMetrics,
-		spoolManager:      spoolManager,
-		lockClient:        lockClient,
-		activityReporter:  activityReporter,
+		config:             cfg,
+		instanceID:         instanceID,
+		parquetConverter:   NewParquetConverter(),
+		uploadPool:         uploadPool,
+		dataLayoutManager:  NewDataLayoutManager(),
+		metrics:            tenantMetrics,
+		spoolManager:       spoolManager,
+		lockClient:         lockClient,
+		activityReporter:   activityReporter,
+		accumulationClient: cfg.AccumulationClient,
 	}, nil
 }
 
@@ -302,14 +310,40 @@ func (tp *TenantProcessor) processDatasetStreaming(ctx context.Context, tenant *
 
 	log.Infof("Found %d NDJSON files for streaming processing of dataset %s in tenant %s", len(files), dataset.ID, tenant.ID)
 
-	// Step 2: Start activity reporting for this operation
+	// Step 1.5: Check accumulation state if client is available
+	if tp.accumulationClient != nil {
+		shouldProcess, accState := tp.checkAccumulationState(ctx, tenant.ID, dataset.ID, files)
+		if !shouldProcess {
+			// Threshold not met - skip processing, files stay in MinIO
+			result.Skipped = true
+			result.ProcessingTime = time.Since(startTime)
+			if accState != nil {
+				result.AccumulatedBytes = accState.AccumulatedBytes
+				result.ProgressPercent = accState.ProgressPercent
+			}
+			log.Infof("Dataset %s/%s: accumulating (%.1f%% of threshold, %d files, %d bytes) - skipping flush",
+				tenant.ID, dataset.ID, result.ProgressPercent, len(files), result.AccumulatedBytes)
+			return result
+		}
+		// Threshold met - proceed with processing
+		if accState != nil {
+			log.Infof("Dataset %s/%s: threshold met (%s), flushing %d files (%d bytes)",
+				tenant.ID, dataset.ID, accState.FlushReason, len(files), accState.AccumulatedBytes)
+		}
+	}
+
+	// Step 2: Calculate batch hash for idempotent uploads
+	batchHash := tp.calculateBatchHash(files)
+	log.Debugf("Calculated batch hash for %s/%s: %s (from %d files)", tenant.ID, dataset.ID, batchHash[:12], len(files))
+
+	// Step 3: Start activity reporting for this operation
 	operationID := fmt.Sprintf("%s/%s-%d", tenant.ID, dataset.ID, time.Now().Unix())
 	if tp.activityReporter != nil {
 		tp.activityReporter.StartOperation(operationID, tenant.ID, dataset.ID, "converting", int64(len(files)), "files")
 	}
 
-	// Step 3: Generate secure data layout for this dataset
-	layout, err := tp.dataLayoutManager.GenerateSecureLayout(tenant, dataset, time.Now(), "parquet")
+	// Step 4: Generate secure data layout for this dataset (with batch hash for idempotency)
+	layout, err := tp.dataLayoutManager.GenerateSecureLayout(tenant, dataset, time.Now(), "parquet", batchHash)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to generate secure layout for dataset %s in tenant %s: %w", dataset.ID, tenant.ID, err)
 		result.ProcessingTime = time.Since(startTime)
@@ -319,7 +353,26 @@ func (tp *TenantProcessor) processDatasetStreaming(ctx context.Context, tenant *
 		return result
 	}
 
-	// Step 4: Stream NDJSON files directly to Parquet using parquet converter
+	// Step 4.5: Check if parquet file already exists (idempotency check for crash recovery)
+	if tp.checkParquetExists(ctx, dataset, layout.ParquetPath) {
+		log.Warnf("Parquet file already exists for batch %s, skipping upload and cleaning up source files: %s",
+			batchHash[:12], layout.ParquetPath)
+		// File already uploaded (likely from crashed previous run), just cleanup source files
+		if tp.config.UploadPool.CleanupSourceFiles {
+			if err := tp.cleanupSourceFiles(ctx, tenant.ID, files); err != nil {
+				log.Errorf("Failed to cleanup source files after idempotency check: %v", err)
+			}
+		}
+		tp.markAccumulationFlushed(ctx, tenant.ID, dataset.ID)
+		result.FilesProcessed = len(files)
+		result.ProcessingTime = time.Since(startTime)
+		if tp.activityReporter != nil {
+			tp.activityReporter.CompleteOperation(operationID, 0, 0, 0) // Skipped - already uploaded
+		}
+		return result
+	}
+
+	// Step 5: Stream NDJSON files directly to Parquet using parquet converter
 	conversionStart := time.Now()
 	parquetFilePath, conversionResult, err := tp.parquetConverter.StreamNDJSONToParquet(ctx, files, layout.ParquetPath, &ParquetConversionOptions{
 		Compression:          tp.config.Parquet.Compression,
@@ -405,6 +458,9 @@ func (tp *TenantProcessor) processDatasetStreaming(ctx context.Context, tenant *
 		}
 	}
 
+	// Mark accumulation as flushed after successful streaming processing
+	tp.markAccumulationFlushed(ctx, tenant.ID, dataset.ID)
+
 	return result
 }
 
@@ -440,6 +496,56 @@ func (tp *TenantProcessor) processDatasetInternal(ctx context.Context, tenant *d
 	}
 
 	log.Infof("Found %d NDJSON files for dataset %s in tenant %s", len(files), dataset.ID, tenant.ID)
+
+	// Step 1.5: Check accumulation state if client is available
+	if tp.accumulationClient != nil {
+		shouldProcess, accState := tp.checkAccumulationState(ctx, tenant.ID, dataset.ID, files)
+		if !shouldProcess {
+			// Threshold not met - skip processing, files stay in MinIO
+			result.Skipped = true
+			result.ProcessingTime = time.Since(startTime)
+			if accState != nil {
+				result.AccumulatedBytes = accState.AccumulatedBytes
+				result.ProgressPercent = accState.ProgressPercent
+			}
+			log.Infof("Dataset %s/%s: accumulating (%.1f%% of threshold, %d files, %d bytes) - skipping flush",
+				tenant.ID, dataset.ID, result.ProgressPercent, len(files), result.AccumulatedBytes)
+			return result
+		}
+		// Threshold met - proceed with processing
+		if accState != nil {
+			log.Infof("Dataset %s/%s: threshold met (%s), flushing %d files (%d bytes)",
+				tenant.ID, dataset.ID, accState.FlushReason, len(files), accState.AccumulatedBytes)
+		}
+	}
+
+	// Step 1.6: Calculate batch hash for idempotent uploads
+	batchHash := tp.calculateBatchHash(files)
+	log.Debugf("Calculated batch hash for %s/%s: %s (from %d files)", tenant.ID, dataset.ID, batchHash[:12], len(files))
+
+	// Step 1.7: Generate layout early to check if parquet already exists (idempotency)
+	layout, err := tp.dataLayoutManager.GenerateSecureLayout(tenant, dataset, time.Now(), "parquet", batchHash)
+	if err != nil {
+		result.Error = fmt.Errorf("failed to generate secure layout for dataset %s in tenant %s: %w", dataset.ID, tenant.ID, err)
+		result.ProcessingTime = time.Since(startTime)
+		return result
+	}
+
+	// Step 1.8: Check if parquet file already exists (crash recovery idempotency)
+	if tp.checkParquetExists(ctx, dataset, layout.ParquetPath) {
+		log.Warnf("Parquet file already exists for batch %s, skipping processing and cleaning up source files: %s",
+			batchHash[:12], layout.ParquetPath)
+		// File already uploaded (likely from crashed previous run), just cleanup source files
+		if tp.config.UploadPool.CleanupSourceFiles {
+			if err := tp.cleanupSourceFiles(ctx, tenant.ID, files); err != nil {
+				log.Errorf("Failed to cleanup source files after idempotency check: %v", err)
+			}
+		}
+		tp.markAccumulationFlushed(ctx, tenant.ID, dataset.ID)
+		result.FilesProcessed = len(files)
+		result.ProcessingTime = time.Since(startTime)
+		return result
+	}
 
 	// Step 2: Create temporary merged file
 	mergedFile, err := tp.createMergedFile(ctx, tenant, dataset, files)
@@ -493,9 +599,9 @@ func (tp *TenantProcessor) processDatasetInternal(ctx context.Context, tenant *d
 	log.Infof("Successfully converted %d records to parquet for tenant %s: %s",
 		conversionResult.RecordsCount, tenant.ID, result.ParquetFile)
 
-	// Step 4: Upload to tenant's S3 destination with data lake partitioning
+	// Step 4: Upload to tenant's S3 destination with data lake partitioning (using pre-generated layout for idempotency)
 	uploadStart := time.Now()
-	parquetLocation, rawLocation, err := tp.uploadToDestination(ctx, tenant, dataset, result.ParquetFile, mergedFile)
+	parquetLocation, rawLocation, err := tp.uploadToDestination(ctx, tenant, dataset, result.ParquetFile, mergedFile, layout)
 	if err != nil {
 		result.Error = fmt.Errorf("failed to upload files for tenant %s: %w", tenant.ID, err)
 		result.ProcessingTime = processingTime
@@ -577,6 +683,9 @@ func (tp *TenantProcessor) processDatasetInternal(ctx context.Context, tenant *d
 			tp.metrics.RecordRecordsProcessed(ctx, tenant.ID, tenant.Name, result.RecordsProcessed)
 		}
 	}
+
+	// Mark accumulation as flushed after successful processing
+	tp.markAccumulationFlushed(ctx, tenant.ID, dataset.ID)
 
 	log.Infof("Successfully completed processing pipeline for tenant %s", tenant.ID)
 	return result
@@ -723,12 +832,21 @@ func (tp *TenantProcessor) processFileContent(reader io.Reader, writer *bufio.Wr
 }
 
 // uploadToDestination uploads both parquet and raw files to dataset's S3 destination using secure data layout
-func (tp *TenantProcessor) uploadToDestination(ctx context.Context, tenant *domain.Tenant, dataset *domain.Dataset, parquetFile, mergedFile string) (parquetLocation, rawLocation string, err error) {
-	// Generate secure data layout with cross-tenant protection
+// If preGeneratedLayout is provided, it will be used; otherwise a new layout is generated
+func (tp *TenantProcessor) uploadToDestination(ctx context.Context, tenant *domain.Tenant, dataset *domain.Dataset, parquetFile, mergedFile string, preGeneratedLayout *DataLayout) (parquetLocation, rawLocation string, err error) {
+	var layout *DataLayout
 	processingTime := time.Now()
-	layout, err := tp.dataLayoutManager.GenerateSecureLayout(tenant, dataset, processingTime, "ndjson")
-	if err != nil {
-		return "", "", fmt.Errorf("failed to generate secure data layout: %w", err)
+
+	if preGeneratedLayout != nil {
+		// Use pre-generated layout (for idempotent uploads with batch hash)
+		layout = preGeneratedLayout
+		log.Debugf("Using pre-generated layout for tenant %s, dataset %s", tenant.ID, dataset.ID)
+	} else {
+		// Generate secure data layout with cross-tenant protection
+		layout, err = tp.dataLayoutManager.GenerateSecureLayout(tenant, dataset, processingTime, "ndjson")
+		if err != nil {
+			return "", "", fmt.Errorf("failed to generate secure data layout: %w", err)
+		}
 	}
 
 	log.Infof("Using secure data layout for tenant %s, dataset %s: parquet=%s, raw=%s",
@@ -1161,4 +1279,98 @@ func (tp *TenantProcessor) maintainLockHeartbeat(ctx context.Context, heartbeatC
 			}
 		}
 	}
+}
+
+// checkAccumulationState checks if a dataset should be processed based on accumulation thresholds
+// Returns (shouldProcess, accumulationState)
+func (tp *TenantProcessor) checkAccumulationState(ctx context.Context, tenantID, datasetID string, files []storage.S3Object) (bool, *storage.AccumulationState) {
+	if tp.accumulationClient == nil {
+		// No accumulation client - always process
+		return true, nil
+	}
+
+	// Calculate accumulated bytes and find oldest/newest file times
+	var totalBytes int64
+	var oldestTime, newestTime *time.Time
+
+	for _, file := range files {
+		totalBytes += file.Size
+		if oldestTime == nil || file.LastModified.Before(*oldestTime) {
+			t := file.LastModified
+			oldestTime = &t
+		}
+		if newestTime == nil || file.LastModified.After(*newestTime) {
+			t := file.LastModified
+			newestTime = &t
+		}
+	}
+
+	// Update accumulation state in Control API
+	state, err := tp.accumulationClient.UpdateState(ctx, tenantID, datasetID, totalBytes, len(files), oldestTime, newestTime)
+	if err != nil {
+		log.Warnf("Failed to update accumulation state for %s/%s: %v - proceeding with processing", tenantID, datasetID, err)
+		// On error, default to processing (fail-open for data safety)
+		return true, nil
+	}
+
+	// Check if we should flush
+	return state.ShouldFlush, state
+}
+
+// markAccumulationFlushed marks the accumulation as flushed after successful processing
+func (tp *TenantProcessor) markAccumulationFlushed(ctx context.Context, tenantID, datasetID string) {
+	if tp.accumulationClient == nil {
+		return
+	}
+
+	_, err := tp.accumulationClient.MarkFlushed(ctx, tenantID, datasetID)
+	if err != nil {
+		log.Errorf("Failed to mark accumulation flushed for %s/%s: %v", tenantID, datasetID, err)
+	}
+}
+
+// calculateBatchHash creates a deterministic hash from a list of files
+// This enables idempotent uploads - same input files always produce the same output filename
+func (tp *TenantProcessor) calculateBatchHash(files []storage.S3Object) string {
+	hasher := sha256.New()
+	// Sort files by key for deterministic ordering
+	sortedKeys := make([]string, len(files))
+	for i, f := range files {
+		sortedKeys[i] = f.Key
+	}
+	sort.Strings(sortedKeys)
+
+	// Hash the sorted file keys and sizes
+	for _, key := range sortedKeys {
+		for _, f := range files {
+			if f.Key == key {
+				hasher.Write([]byte(fmt.Sprintf("%s:%d:", f.Key, f.Size)))
+				break
+			}
+		}
+	}
+
+	return fmt.Sprintf("%x", hasher.Sum(nil))
+}
+
+// checkParquetExists checks if a parquet file already exists in the destination bucket
+// This is used for idempotency - if file exists, we skip upload and just cleanup source files
+func (tp *TenantProcessor) checkParquetExists(ctx context.Context, dataset *domain.Dataset, parquetPath string) bool {
+	if tp.config.S3DestinationManager == nil || dataset.S3Destination == nil {
+		return false
+	}
+
+	destClient, err := tp.config.S3DestinationManager.GetS3Client(dataset.TenantID, dataset.ID, dataset.S3Destination)
+	if err != nil {
+		log.Warnf("Failed to get destination client for idempotency check: %v", err)
+		return false
+	}
+
+	exists, err := destClient.ObjectExists(ctx, dataset.S3Destination.BucketName, parquetPath)
+	if err != nil {
+		log.Warnf("Failed to check if parquet exists for idempotency: %v", err)
+		return false
+	}
+
+	return exists
 }
