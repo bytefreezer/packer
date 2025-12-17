@@ -14,11 +14,12 @@ import (
 
 // S3Writer implements io.Writer for direct streaming to S3
 type S3Writer struct {
-	client *s3.Client
-	bucket string
-	key    string
-	buffer *bytes.Buffer
-	closed bool
+	client   *s3.Client
+	bucket   string
+	key      string
+	buffer   *bytes.Buffer
+	closed   bool
+	metadata map[string]string // Custom metadata for S3 object
 }
 
 // Write implements io.Writer interface
@@ -34,6 +35,11 @@ func (w *S3Writer) Write(p []byte) (n int, err error) {
 	return w.buffer.Write(p)
 }
 
+// SetMetadata sets custom metadata to be included with the S3 upload
+func (w *S3Writer) SetMetadata(metadata map[string]string) {
+	w.metadata = metadata
+}
+
 // Close uploads the buffer to S3 and closes the writer
 func (w *S3Writer) Close() error {
 	if w.closed {
@@ -45,12 +51,20 @@ func (w *S3Writer) Close() error {
 		return nil
 	}
 
-	// Upload to S3
-	_, err := w.client.PutObject(context.Background(), &s3.PutObjectInput{
+	// Build put object input
+	input := &s3.PutObjectInput{
 		Bucket: aws.String(w.bucket),
 		Key:    aws.String(w.key),
 		Body:   bytes.NewReader(w.buffer.Bytes()),
-	})
+	}
+
+	// Add custom metadata if provided
+	if len(w.metadata) > 0 {
+		input.Metadata = w.metadata
+	}
+
+	// Upload to S3
+	_, err := w.client.PutObject(context.Background(), input)
 
 	w.closed = true
 	return err

@@ -24,6 +24,15 @@ type BucketOwnership struct {
 	RegisteredAt    time.Time
 }
 
+// FileMetadata contains metadata about the parquet file content
+type FileMetadata struct {
+	MinTimestamp time.Time // Earliest timestamp in the file
+	MaxTimestamp time.Time // Latest timestamp in the file
+	RowCount     int64     // Number of rows in the file
+	SizeBytes    int64     // File size in bytes
+	SchemaHash   string    // Hash of the schema for compatibility checking
+}
+
 // DataLayout represents the complete data layout for a dataset
 type DataLayout struct {
 	// Bucket information
@@ -45,6 +54,9 @@ type DataLayout struct {
 
 	// Idempotency - hash of input files for deduplication
 	BatchHash string // Hash of input file list for idempotent uploads
+
+	// File content metadata (populated after conversion)
+	FileMetadata *FileMetadata
 }
 
 // NewDataLayoutManager creates a new data layout manager
@@ -79,7 +91,7 @@ func (dlm *DataLayoutManager) GenerateSecureLayout(tenant *domain.Tenant, datase
 	layout.DatasetDirectory = dlm.generateSecureDatasetDirectory(dataset)
 
 	// Step 3: Get partitioning scheme
-	partitionScheme := "hive" // Default to hive for backward compatibility
+	partitionScheme := "date_hour" // Default to hourly partitions for better query performance
 	var customPattern string
 	if dataset.ProcessingConfig != nil && dataset.ProcessingConfig.PartitioningScheme != "" {
 		partitionScheme = dataset.ProcessingConfig.PartitioningScheme
@@ -261,6 +273,74 @@ func (dlm *DataLayoutManager) sanitizeDirectoryName(name string) string {
 	}
 
 	return sanitized
+}
+
+// GenerateFilenameWithMetadata creates a filename that includes timestamp range and row count
+// Format: {tenant}_{dataset}_{minTS}_{maxTS}_{rowcount}_{hash}.parquet
+// Example: customer-1_weblog_20251217T140000_20251217T143052_50000_abc123de.parquet
+func (dlm *DataLayoutManager) GenerateFilenameWithMetadata(tenant *domain.Tenant, dataset *domain.Dataset, metadata *FileMetadata, batchHash string) string {
+	minTS := metadata.MinTimestamp.UTC().Format("20060102T150405")
+	maxTS := metadata.MaxTimestamp.UTC().Format("20060102T150405")
+	rowCount := metadata.RowCount
+
+	var contentHash string
+	if batchHash != "" {
+		contentHash = batchHash[:12]
+	} else {
+		hasher := sha256.New()
+		hasher.Write([]byte(fmt.Sprintf("%s:%s:%s:%s:%d", tenant.ID, dataset.ID, minTS, maxTS, rowCount)))
+		contentHash = fmt.Sprintf("%x", hasher.Sum(nil))[:8]
+	}
+
+	return fmt.Sprintf("%s_%s_%s_%s_%d_%s",
+		dlm.sanitizeDirectoryName(tenant.ID),
+		dlm.sanitizeDirectoryName(dataset.ID),
+		minTS,
+		maxTS,
+		rowCount,
+		contentHash)
+}
+
+// RegeneratePathsWithMetadata updates the layout paths to include file metadata in the filename
+// This should be called after parquet conversion when we know the actual timestamps and row count
+func (dlm *DataLayoutManager) RegeneratePathsWithMetadata(layout *DataLayout, tenant *domain.Tenant, dataset *domain.Dataset, metadata *FileMetadata) {
+	layout.FileMetadata = metadata
+
+	// Generate new filename with metadata
+	baseFileName := dlm.GenerateFilenameWithMetadata(tenant, dataset, metadata, layout.BatchHash)
+
+	// Rebuild paths with new filename
+	basePath := fmt.Sprintf("%s/%s", layout.TenantDirectory, layout.DatasetDirectory)
+
+	var prefix string
+	if dataset.S3Destination != nil && dataset.S3Destination.Prefix != "" {
+		prefix = strings.TrimSuffix(dataset.S3Destination.Prefix, "/") + "/"
+	}
+
+	// Use hour from max timestamp for partition (most recent data)
+	partitionPath := dlm.generatePartitionPath(layout.PartitionScheme, metadata.MaxTimestamp)
+
+	if partitionPath != "" {
+		layout.ParquetPath = fmt.Sprintf("%s%s/data/parquet/%s/%s.parquet", prefix, basePath, partitionPath, baseFileName)
+		layout.RawPath = fmt.Sprintf("%s%s/data/raw/%s/%s.ndjson", prefix, basePath, partitionPath, baseFileName)
+	} else {
+		layout.ParquetPath = fmt.Sprintf("%s%s/data/parquet/%s.parquet", prefix, basePath, baseFileName)
+		layout.RawPath = fmt.Sprintf("%s%s/data/raw/%s.ndjson", prefix, basePath, baseFileName)
+	}
+}
+
+// GetS3Metadata returns metadata headers to attach to S3 upload
+func (fm *FileMetadata) GetS3Metadata() map[string]string {
+	if fm == nil {
+		return nil
+	}
+	return map[string]string{
+		"x-amz-meta-min-timestamp": fm.MinTimestamp.UTC().Format(time.RFC3339),
+		"x-amz-meta-max-timestamp": fm.MaxTimestamp.UTC().Format(time.RFC3339),
+		"x-amz-meta-row-count":     fmt.Sprintf("%d", fm.RowCount),
+		"x-amz-meta-size-bytes":    fmt.Sprintf("%d", fm.SizeBytes),
+		"x-amz-meta-schema-hash":   fm.SchemaHash,
+	}
 }
 
 // validateLayoutSecurity performs final security validation on the layout

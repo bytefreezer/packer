@@ -8,10 +8,10 @@ import (
 	"compress/gzip"
 	"context"
 	"fmt"
-	"github.com/bytedance/sonic"
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -21,6 +21,7 @@ import (
 	"github.com/apache/arrow/go/v18/parquet"
 	"github.com/apache/arrow/go/v18/parquet/compress"
 	"github.com/apache/arrow/go/v18/parquet/pqarrow"
+	"github.com/bytedance/sonic"
 	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/packer/storage"
@@ -39,6 +40,9 @@ type ConversionResult struct {
 	FileSize         int64
 	ConvertTime      time.Duration
 	Error            error
+	// Timestamp tracking for smart filenames and S3 metadata
+	MinTimestamp time.Time
+	MaxTimestamp time.Time
 }
 
 type ParquetConversionOptions struct {
@@ -170,6 +174,9 @@ func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []s
 	batch := make([]map[string]interface{}, 0, options.CheckpointRecords)
 	lastProgressUpdate := time.Now()
 
+	// Track aggregated timestamps across all files
+	var aggregatedTimestamps FileTimestamps
+
 	for i, file := range files {
 		select {
 		case <-ctx.Done():
@@ -180,7 +187,7 @@ func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []s
 
 		log.Debugf("Streaming file %d/%d: %s", i+1, len(files), file.Key)
 
-		fileRecords, fileSize, err := pc.processS3FileStreaming(ctx, file, options.S3SourceClient, &batch, schema, writer, options.CheckpointRecords)
+		fileRecords, fileSize, fileTimestamps, err := pc.processS3FileStreaming(ctx, file, options.S3SourceClient, &batch, schema, writer, options.CheckpointRecords)
 		if err != nil {
 			log.Warnf("Failed to process file %s: %v", file.Key, err)
 			continue
@@ -188,6 +195,20 @@ func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []s
 
 		recordsProcessed += fileRecords
 		totalSize += fileSize
+
+		// Aggregate timestamps
+		if fileTimestamps != nil && fileTimestamps.HasTimestamp {
+			if !aggregatedTimestamps.HasTimestamp {
+				aggregatedTimestamps = *fileTimestamps
+			} else {
+				if fileTimestamps.MinTimestamp.Before(aggregatedTimestamps.MinTimestamp) {
+					aggregatedTimestamps.MinTimestamp = fileTimestamps.MinTimestamp
+				}
+				if fileTimestamps.MaxTimestamp.After(aggregatedTimestamps.MaxTimestamp) {
+					aggregatedTimestamps.MaxTimestamp = fileTimestamps.MaxTimestamp
+				}
+			}
+		}
 
 		// Report progress every 100 files or 30 seconds
 		if options.ActivityReporter != nil && options.OperationID != "" {
@@ -213,7 +234,21 @@ func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []s
 		}
 	}
 
-	// Step 8: Close writer and capture output size
+	// Step 8: Set S3 metadata before closing (upload happens on close)
+	if aggregatedTimestamps.HasTimestamp {
+		s3Metadata := map[string]string{
+			"min-timestamp": aggregatedTimestamps.MinTimestamp.UTC().Format(time.RFC3339),
+			"max-timestamp": aggregatedTimestamps.MaxTimestamp.UTC().Format(time.RFC3339),
+			"row-count":     fmt.Sprintf("%d", recordsProcessed),
+		}
+		s3Writer.SetMetadata(s3Metadata)
+		log.Debugf("Setting S3 metadata: min=%s, max=%s, rows=%d",
+			aggregatedTimestamps.MinTimestamp.Format(time.RFC3339),
+			aggregatedTimestamps.MaxTimestamp.Format(time.RFC3339),
+			recordsProcessed)
+	}
+
+	// Step 9: Close writer and capture output size
 	// Get bytes written BEFORE closing (buffer is available before close)
 	outputSize := s3Writer.BytesWritten()
 
@@ -222,7 +257,7 @@ func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []s
 		return "", result, result.Error
 	}
 
-	// Step 9: Atomic rename if enabled
+	// Step 10: Atomic rename if enabled
 	if options.AtomicUpload {
 		if err := s3Writer.AtomicRename(finalKey); err != nil {
 			result.Error = fmt.Errorf("failed to perform atomic rename: %w", err)
@@ -235,6 +270,13 @@ func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []s
 	result.FileSize = outputSize
 	result.ConvertTime = time.Since(startTime)
 	result.OutputFile = finalKey
+
+	// Set aggregated timestamps on result
+	if aggregatedTimestamps.HasTimestamp {
+		result.MinTimestamp = aggregatedTimestamps.MinTimestamp
+		result.MaxTimestamp = aggregatedTimestamps.MaxTimestamp
+		log.Debugf("Timestamp range: %s to %s", result.MinTimestamp.Format(time.RFC3339), result.MaxTimestamp.Format(time.RFC3339))
+	}
 
 	log.Infof("Streaming conversion completed: %d records, input: %d bytes, output: %d bytes, time: %v",
 		recordsProcessed, totalSize, outputSize, result.ConvertTime)
@@ -495,10 +537,15 @@ func (pc *ParquetConverter) convertToParquet(inputPath, outputPath string, schem
 }
 
 // writeBatch writes a batch of records to the Parquet file
+// Records are sorted by timestamp before writing for better query performance
 func (pc *ParquetConverter) writeBatch(writer *pqarrow.FileWriter, schema *arrow.Schema, records []map[string]interface{}) error {
 	if len(records) == 0 {
 		return nil
 	}
+
+	// Sort records by timestamp for better query performance
+	// This allows queries to skip ORDER BY since data is pre-sorted
+	pc.sortRecordsByTimestamp(records)
 
 	// Build arrays for each field
 	builders := make([]array.Builder, len(schema.Fields()))
@@ -795,11 +842,19 @@ func (pc *ParquetConverter) analyzeNDJSONSchemaFromReader(reader io.Reader, file
 	return schema, recordCount, nil
 }
 
+// FileTimestamps holds min/max timestamps tracked during processing
+type FileTimestamps struct {
+	MinTimestamp time.Time
+	MaxTimestamp time.Time
+	HasTimestamp bool
+}
+
 // processS3FileStreaming processes a single S3 file in streaming mode
-func (pc *ParquetConverter) processS3FileStreaming(ctx context.Context, file storage.S3Object, s3Client *storage.S3SourceClient, batch *[]map[string]interface{}, schema *arrow.Schema, writer *pqarrow.FileWriter, checkpointRecords int) (int64, int64, error) {
+// Returns: recordsProcessed, totalSize, timestamps, error
+func (pc *ParquetConverter) processS3FileStreaming(ctx context.Context, file storage.S3Object, s3Client *storage.S3SourceClient, batch *[]map[string]interface{}, schema *arrow.Schema, writer *pqarrow.FileWriter, checkpointRecords int) (int64, int64, *FileTimestamps, error) {
 	reader, err := s3Client.GetObject(ctx, file.Key)
 	if err != nil {
-		return 0, 0, fmt.Errorf("failed to get object: %w", err)
+		return 0, 0, nil, fmt.Errorf("failed to get object: %w", err)
 	}
 	defer reader.Close()
 
@@ -808,7 +863,7 @@ func (pc *ParquetConverter) processS3FileStreaming(ctx context.Context, file sto
 	if strings.HasSuffix(strings.ToLower(file.Key), ".gz") {
 		gzipReader, err := gzip.NewReader(reader)
 		if err != nil {
-			return 0, 0, fmt.Errorf("failed to create gzip reader: %w", err)
+			return 0, 0, nil, fmt.Errorf("failed to create gzip reader: %w", err)
 		}
 		defer gzipReader.Close()
 		contentReader = gzipReader
@@ -817,12 +872,29 @@ func (pc *ParquetConverter) processS3FileStreaming(ctx context.Context, file sto
 	scanner := bufio.NewScanner(contentReader)
 	recordsProcessed := int64(0)
 	totalSize := int64(0)
+	timestamps := &FileTimestamps{}
 
 	for scanner.Scan() {
 		var record map[string]interface{}
 		line := scanner.Bytes()
 		if err := sonic.Unmarshal(line, &record); err != nil {
 			continue // Skip invalid JSON lines
+		}
+
+		// Track timestamps from InfoTimestamp field
+		if ts := pc.extractTimestampFromRecord(record); !ts.IsZero() {
+			if !timestamps.HasTimestamp {
+				timestamps.MinTimestamp = ts
+				timestamps.MaxTimestamp = ts
+				timestamps.HasTimestamp = true
+			} else {
+				if ts.Before(timestamps.MinTimestamp) {
+					timestamps.MinTimestamp = ts
+				}
+				if ts.After(timestamps.MaxTimestamp) {
+					timestamps.MaxTimestamp = ts
+				}
+			}
 		}
 
 		*batch = append(*batch, record)
@@ -832,15 +904,81 @@ func (pc *ParquetConverter) processS3FileStreaming(ctx context.Context, file sto
 		// Write batch if checkpoint reached
 		if len(*batch) >= checkpointRecords {
 			if err := pc.writeBatch(writer, schema, *batch); err != nil {
-				return recordsProcessed, totalSize, fmt.Errorf("failed to write batch: %w", err)
+				return recordsProcessed, totalSize, timestamps, fmt.Errorf("failed to write batch: %w", err)
 			}
 			*batch = (*batch)[:0] // Reset batch
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return recordsProcessed, totalSize, fmt.Errorf("error reading file: %w", err)
+		return recordsProcessed, totalSize, timestamps, fmt.Errorf("error reading file: %w", err)
 	}
 
-	return recordsProcessed, totalSize, nil
+	return recordsProcessed, totalSize, timestamps, nil
+}
+
+// extractTimestampFromRecord extracts timestamp from common timestamp fields
+func (pc *ParquetConverter) extractTimestampFromRecord(record map[string]interface{}) time.Time {
+	// Try common timestamp field names in order of priority
+	timestampFields := []string{"InfoTimestamp", "timestamp", "Timestamp", "@timestamp", "time", "Time", "event_time", "created_at"}
+
+	for _, fieldName := range timestampFields {
+		if value, exists := record[fieldName]; exists {
+			if ts := pc.parseTimestampValue(value); !ts.IsZero() {
+				return ts
+			}
+		}
+	}
+
+	return time.Time{}
+}
+
+// parseTimestampValue parses various timestamp formats
+func (pc *ParquetConverter) parseTimestampValue(value interface{}) time.Time {
+	switch v := value.(type) {
+	case string:
+		formats := []string{
+			time.RFC3339,
+			time.RFC3339Nano,
+			"2006-01-02T15:04:05.000Z",
+			"2006-01-02T15:04:05Z",
+			"2006-01-02 15:04:05",
+			"2006-01-02T15:04:05",
+			"2006-01-02",
+		}
+		for _, format := range formats {
+			if t, err := time.Parse(format, v); err == nil {
+				return t
+			}
+		}
+	case float64:
+		// Unix timestamp in seconds or milliseconds
+		if v > 1e12 {
+			// Milliseconds
+			return time.UnixMilli(int64(v))
+		}
+		return time.Unix(int64(v), 0)
+	case int64:
+		if v > 1e12 {
+			return time.UnixMilli(v)
+		}
+		return time.Unix(v, 0)
+	}
+	return time.Time{}
+}
+
+// sortRecordsByTimestamp sorts records by timestamp in ascending order
+// This ensures parquet files are pre-sorted, allowing queries to skip ORDER BY
+func (pc *ParquetConverter) sortRecordsByTimestamp(records []map[string]interface{}) {
+	sort.Slice(records, func(i, j int) bool {
+		tsI := pc.extractTimestampFromRecord(records[i])
+		tsJ := pc.extractTimestampFromRecord(records[j])
+
+		// If either timestamp is zero, maintain original order
+		if tsI.IsZero() || tsJ.IsZero() {
+			return false
+		}
+
+		return tsI.Before(tsJ)
+	})
 }
