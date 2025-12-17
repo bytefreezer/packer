@@ -58,6 +58,29 @@ type ParquetConversionOptions struct {
 	OperationID          string
 }
 
+// MultiFileResult contains results for all output files when splitting occurs
+type MultiFileResult struct {
+	Files            []string           // All output file paths
+	Results          []*ConversionResult // Result per file
+	TotalRecords     int64
+	TotalInputSize   int64
+	TotalOutputSize  int64
+	TotalConvertTime time.Duration
+}
+
+// parquetWriterState holds state for a single parquet output file
+type parquetWriterState struct {
+	s3Writer    *S3Writer
+	writer      *pqarrow.FileWriter
+	partNumber  int
+	baseKey     string
+	finalKey    string
+	uploadKey   string
+	records     int64
+	timestamps  FileTimestamps
+	startTime   time.Time
+}
+
 func NewParquetConverter() *ParquetConverter {
 	return &ParquetConverter{
 		memPool: memory.NewGoAllocator(),
@@ -110,48 +133,68 @@ func (pc *ParquetConverter) ConvertNDJSONToParquet(inputFilePath string) (*Conve
 }
 
 // StreamNDJSONToParquet streams NDJSON files directly to Parquet without intermediate files
+// Supports file splitting when output exceeds MaxFileSizeMB
 func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []storage.S3Object, s3Key string, options *ParquetConversionOptions) (string, *ConversionResult, error) {
+	multiResult, err := pc.StreamNDJSONToParquetMulti(ctx, files, s3Key, options)
+	if err != nil {
+		return "", &ConversionResult{Error: err}, err
+	}
+
+	// Return first file for backward compatibility
+	if len(multiResult.Files) == 0 {
+		return "", &ConversionResult{}, fmt.Errorf("no output files created")
+	}
+
+	// Combine results for single-file API compatibility
+	result := &ConversionResult{
+		InputFile:        fmt.Sprintf("streaming-%d-files", len(files)),
+		OutputFile:       multiResult.Files[0],
+		RecordsProcessed: multiResult.TotalRecords,
+		TotalSize:        multiResult.TotalInputSize,
+		FileSize:         multiResult.TotalOutputSize,
+		ConvertTime:      multiResult.TotalConvertTime,
+	}
+
+	// Get timestamps from first result
+	if len(multiResult.Results) > 0 && !multiResult.Results[0].MinTimestamp.IsZero() {
+		result.MinTimestamp = multiResult.Results[0].MinTimestamp
+		result.MaxTimestamp = multiResult.Results[len(multiResult.Results)-1].MaxTimestamp
+	}
+
+	return multiResult.Files[0], result, nil
+}
+
+// StreamNDJSONToParquetMulti streams NDJSON files to multiple Parquet files with size limiting
+func (pc *ParquetConverter) StreamNDJSONToParquetMulti(ctx context.Context, files []storage.S3Object, s3Key string, options *ParquetConversionOptions) (*MultiFileResult, error) {
 	startTime := time.Now()
 
-	result := &ConversionResult{
-		InputFile: fmt.Sprintf("streaming-%d-files", len(files)),
-	}
+	multiResult := &MultiFileResult{}
 
 	if len(files) == 0 {
-		return "", result, fmt.Errorf("no files provided for streaming conversion")
+		return nil, fmt.Errorf("no files provided for streaming conversion")
 	}
 
-	log.Infof("Starting streaming conversion of %d files to S3 key: %s", len(files), s3Key)
+	// Calculate max file size in bytes (default 64MB if not set)
+	maxFileSizeBytes := int64(64 * 1024 * 1024)
+	if options.MaxFileSizeMB > 0 {
+		maxFileSizeBytes = int64(options.MaxFileSizeMB) * 1024 * 1024
+	}
+
+	log.Infof("Starting streaming conversion of %d files to S3 key: %s (max file size: %d MB)", len(files), s3Key, maxFileSizeBytes/(1024*1024))
 
 	// Step 1: Analyze schema from first few files
 	schema, err := pc.analyzeSchemaFromS3Files(ctx, files[:min(len(files), 3)], options.S3SourceClient)
 	if err != nil {
-		result.Error = fmt.Errorf("failed to analyze schema: %w", err)
-		return "", result, result.Error
+		return nil, fmt.Errorf("failed to analyze schema: %w", err)
 	}
 
 	// Step 2: Get S3 destination client
 	destClient, err := options.S3DestinationManager.GetS3Client(options.Dataset.TenantID, options.Dataset.ID, options.Dataset.S3Destination)
 	if err != nil {
-		result.Error = fmt.Errorf("failed to get S3 destination client: %w", err)
-		return "", result, result.Error
+		return nil, fmt.Errorf("failed to get S3 destination client: %w", err)
 	}
 
-	// Step 3: Create temporary file for atomic upload if enabled
-	finalKey := s3Key
-	uploadKey := s3Key
-	if options.AtomicUpload {
-		uploadKey = s3Key + ".tmp"
-	}
-
-	// Step 4: Create S3 writer for direct upload
-	s3Writer := &S3Writer{
-		client: destClient.GetRawS3Client(),
-		bucket: options.Dataset.S3Destination.BucketName,
-		key:    uploadKey,
-	}
-
-	// Step 5: Create Parquet writer
+	// Determine compression codec
 	compression := compress.Codecs.Uncompressed
 	if options.Compression == "zstd" {
 		compression = compress.Codecs.Zstd
@@ -159,128 +202,304 @@ func (pc *ParquetConverter) StreamNDJSONToParquet(ctx context.Context, files []s
 		compression = compress.Codecs.Snappy
 	}
 
-	parquetProps := parquet.NewWriterProperties(parquet.WithCompression(compression))
-	arrowProps := pqarrow.DefaultWriterProps()
+	// Helper function to create a new writer state
+	createWriterState := func(partNum int) (*parquetWriterState, error) {
+		state := &parquetWriterState{
+			partNumber: partNum,
+			baseKey:    s3Key,
+			startTime:  time.Now(),
+		}
 
-	writer, err := pqarrow.NewFileWriter(schema, s3Writer, parquetProps, arrowProps)
-	if err != nil {
-		result.Error = fmt.Errorf("failed to create Parquet writer: %w", err)
-		return "", result, result.Error
+		// Generate part key: base_part001.parquet
+		if partNum == 1 {
+			state.finalKey = s3Key
+		} else {
+			// Insert part number before .parquet extension
+			state.finalKey = strings.TrimSuffix(s3Key, ".parquet") + fmt.Sprintf("_part%03d.parquet", partNum)
+		}
+
+		state.uploadKey = state.finalKey
+		if options.AtomicUpload {
+			state.uploadKey = state.finalKey + ".tmp"
+		}
+
+		state.s3Writer = &S3Writer{
+			client: destClient.GetRawS3Client(),
+			bucket: options.Dataset.S3Destination.BucketName,
+			key:    state.uploadKey,
+		}
+
+		parquetProps := parquet.NewWriterProperties(parquet.WithCompression(compression))
+		arrowProps := pqarrow.DefaultWriterProps()
+
+		writer, err := pqarrow.NewFileWriter(schema, state.s3Writer, parquetProps, arrowProps)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create Parquet writer for part %d: %w", partNum, err)
+		}
+		state.writer = writer
+
+		log.Debugf("Created writer for part %d: %s", partNum, state.finalKey)
+		return state, nil
 	}
 
-	// Step 6: Stream process all files
-	recordsProcessed := int64(0)
-	totalSize := int64(0)
+	// Helper function to finalize a writer state
+	finalizeWriterState := func(state *parquetWriterState) (*ConversionResult, error) {
+		// Set S3 metadata
+		if state.timestamps.HasTimestamp {
+			s3Metadata := map[string]string{
+				"min-timestamp": state.timestamps.MinTimestamp.UTC().Format(time.RFC3339),
+				"max-timestamp": state.timestamps.MaxTimestamp.UTC().Format(time.RFC3339),
+				"row-count":     fmt.Sprintf("%d", state.records),
+			}
+			state.s3Writer.SetMetadata(s3Metadata)
+		}
+
+		outputSize := state.s3Writer.BytesWritten()
+
+		if err := state.writer.Close(); err != nil {
+			return nil, fmt.Errorf("failed to close Parquet writer: %w", err)
+		}
+
+		// Atomic rename if enabled
+		if options.AtomicUpload {
+			if err := state.s3Writer.AtomicRename(state.finalKey); err != nil {
+				return nil, fmt.Errorf("failed to perform atomic rename: %w", err)
+			}
+		}
+
+		result := &ConversionResult{
+			OutputFile:       state.finalKey,
+			RecordsProcessed: state.records,
+			FileSize:         outputSize,
+			ConvertTime:      time.Since(state.startTime),
+			MinTimestamp:     state.timestamps.MinTimestamp,
+			MaxTimestamp:     state.timestamps.MaxTimestamp,
+		}
+
+		log.Infof("Finalized part %d: %s (%d records, %d bytes)", state.partNumber, state.finalKey, state.records, outputSize)
+		return result, nil
+	}
+
+	// Create initial writer
+	currentState, err := createWriterState(1)
+	if err != nil {
+		return nil, err
+	}
+
+	// Track totals
+	totalRecords := int64(0)
+	totalInputSize := int64(0)
 	batch := make([]map[string]interface{}, 0, options.CheckpointRecords)
 	lastProgressUpdate := time.Now()
 
-	// Track aggregated timestamps across all files
-	var aggregatedTimestamps FileTimestamps
-
+	// Process all input files
 	for i, file := range files {
 		select {
 		case <-ctx.Done():
-			writer.Close()
-			return "", result, ctx.Err()
+			currentState.writer.Close()
+			return nil, ctx.Err()
 		default:
 		}
 
 		log.Debugf("Streaming file %d/%d: %s", i+1, len(files), file.Key)
 
-		fileRecords, fileSize, fileTimestamps, err := pc.processS3FileStreaming(ctx, file, options.S3SourceClient, &batch, schema, writer, options.CheckpointRecords)
+		fileRecords, fileSize, fileTimestamps, err := pc.processS3FileStreamingWithSplit(
+			ctx, file, options.S3SourceClient, &batch, schema,
+			currentState, options.CheckpointRecords, maxFileSizeBytes,
+			func() (*parquetWriterState, error) {
+				// Finalize current state
+				result, err := finalizeWriterState(currentState)
+				if err != nil {
+					return nil, err
+				}
+				multiResult.Files = append(multiResult.Files, result.OutputFile)
+				multiResult.Results = append(multiResult.Results, result)
+				multiResult.TotalOutputSize += result.FileSize
+
+				// Create new state
+				newState, err := createWriterState(currentState.partNumber + 1)
+				if err != nil {
+					return nil, err
+				}
+				currentState = newState
+				return currentState, nil
+			},
+		)
 		if err != nil {
 			log.Warnf("Failed to process file %s: %v", file.Key, err)
 			continue
 		}
 
-		recordsProcessed += fileRecords
-		totalSize += fileSize
+		totalRecords += fileRecords
+		totalInputSize += fileSize
 
-		// Aggregate timestamps
+		// Update current state timestamps
 		if fileTimestamps != nil && fileTimestamps.HasTimestamp {
-			if !aggregatedTimestamps.HasTimestamp {
-				aggregatedTimestamps = *fileTimestamps
+			if !currentState.timestamps.HasTimestamp {
+				currentState.timestamps = *fileTimestamps
 			} else {
-				if fileTimestamps.MinTimestamp.Before(aggregatedTimestamps.MinTimestamp) {
-					aggregatedTimestamps.MinTimestamp = fileTimestamps.MinTimestamp
+				if fileTimestamps.MinTimestamp.Before(currentState.timestamps.MinTimestamp) {
+					currentState.timestamps.MinTimestamp = fileTimestamps.MinTimestamp
 				}
-				if fileTimestamps.MaxTimestamp.After(aggregatedTimestamps.MaxTimestamp) {
-					aggregatedTimestamps.MaxTimestamp = fileTimestamps.MaxTimestamp
+				if fileTimestamps.MaxTimestamp.After(currentState.timestamps.MaxTimestamp) {
+					currentState.timestamps.MaxTimestamp = fileTimestamps.MaxTimestamp
 				}
 			}
 		}
 
-		// Report progress every 100 files or 30 seconds
+		// Report progress
 		if options.ActivityReporter != nil && options.OperationID != "" {
 			shouldReport := (i+1)%100 == 0 || time.Since(lastProgressUpdate) > 30*time.Second
 			if shouldReport {
 				options.ActivityReporter.UpdateProgress(
 					options.OperationID,
 					int64(i+1),
-					fmt.Sprintf("Converting %d/%d files", i+1, len(files)),
+					fmt.Sprintf("Converting %d/%d files (part %d)", i+1, len(files), currentState.partNumber),
 				)
-				options.ActivityReporter.UpdateMetrics(options.OperationID, totalSize, s3Writer.BytesWritten(), recordsProcessed)
 				lastProgressUpdate = time.Now()
 			}
 		}
 	}
 
-	// Step 7: Write final batch if any records remain
+	// Write final batch
 	if len(batch) > 0 {
-		if err := pc.writeBatch(writer, schema, batch); err != nil {
-			writer.Close()
-			result.Error = fmt.Errorf("failed to write final batch: %w", err)
-			return "", result, result.Error
+		pc.sortRecordsByTimestamp(batch)
+		if err := pc.writeBatchToState(currentState, schema, batch); err != nil {
+			currentState.writer.Close()
+			return nil, fmt.Errorf("failed to write final batch: %w", err)
 		}
 	}
 
-	// Step 8: Set S3 metadata before closing (upload happens on close)
-	if aggregatedTimestamps.HasTimestamp {
-		s3Metadata := map[string]string{
-			"min-timestamp": aggregatedTimestamps.MinTimestamp.UTC().Format(time.RFC3339),
-			"max-timestamp": aggregatedTimestamps.MaxTimestamp.UTC().Format(time.RFC3339),
-			"row-count":     fmt.Sprintf("%d", recordsProcessed),
+	// Finalize last writer
+	result, err := finalizeWriterState(currentState)
+	if err != nil {
+		return nil, err
+	}
+	multiResult.Files = append(multiResult.Files, result.OutputFile)
+	multiResult.Results = append(multiResult.Results, result)
+	multiResult.TotalOutputSize += result.FileSize
+
+	multiResult.TotalRecords = totalRecords
+	multiResult.TotalInputSize = totalInputSize
+	multiResult.TotalConvertTime = time.Since(startTime)
+
+	log.Infof("Streaming conversion completed: %d records, %d input bytes -> %d output bytes in %d files, time: %v",
+		totalRecords, totalInputSize, multiResult.TotalOutputSize, len(multiResult.Files), multiResult.TotalConvertTime)
+
+	return multiResult, nil
+}
+
+// writeBatchToState writes a batch to a specific writer state and updates record count
+func (pc *ParquetConverter) writeBatchToState(state *parquetWriterState, schema *arrow.Schema, records []map[string]interface{}) error {
+	if err := pc.writeBatch(state.writer, schema, records); err != nil {
+		return err
+	}
+	state.records += int64(len(records))
+	return nil
+}
+
+// processS3FileStreamingWithSplit processes a file with support for mid-file splitting
+func (pc *ParquetConverter) processS3FileStreamingWithSplit(
+	ctx context.Context,
+	file storage.S3Object,
+	s3Client *storage.S3SourceClient,
+	batch *[]map[string]interface{},
+	schema *arrow.Schema,
+	state *parquetWriterState,
+	checkpointRecords int,
+	maxFileSizeBytes int64,
+	createNewWriter func() (*parquetWriterState, error),
+) (int64, int64, *FileTimestamps, error) {
+	reader, err := s3Client.GetObject(ctx, file.Key)
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("failed to get object: %w", err)
+	}
+	defer reader.Close()
+
+	// Handle gzip decompression
+	var contentReader io.Reader = reader
+	if strings.HasSuffix(strings.ToLower(file.Key), ".gz") {
+		gzipReader, err := gzip.NewReader(reader)
+		if err != nil {
+			return 0, 0, nil, fmt.Errorf("failed to create gzip reader: %w", err)
 		}
-		s3Writer.SetMetadata(s3Metadata)
-		log.Debugf("Setting S3 metadata: min=%s, max=%s, rows=%d",
-			aggregatedTimestamps.MinTimestamp.Format(time.RFC3339),
-			aggregatedTimestamps.MaxTimestamp.Format(time.RFC3339),
-			recordsProcessed)
+		defer gzipReader.Close()
+		contentReader = gzipReader
 	}
 
-	// Step 9: Close writer and capture output size
-	// Get bytes written BEFORE closing (buffer is available before close)
-	outputSize := s3Writer.BytesWritten()
+	scanner := bufio.NewScanner(contentReader)
+	recordsProcessed := int64(0)
+	totalSize := int64(0)
+	timestamps := &FileTimestamps{}
 
-	if err := writer.Close(); err != nil {
-		result.Error = fmt.Errorf("failed to close Parquet writer: %w", err)
-		return "", result, result.Error
-	}
+	for scanner.Scan() {
+		var record map[string]interface{}
+		line := scanner.Bytes()
+		if err := sonic.Unmarshal(line, &record); err != nil {
+			continue // Skip invalid JSON lines
+		}
 
-	// Step 10: Atomic rename if enabled
-	if options.AtomicUpload {
-		if err := s3Writer.AtomicRename(finalKey); err != nil {
-			result.Error = fmt.Errorf("failed to perform atomic rename: %w", err)
-			return "", result, result.Error
+		// Track timestamps
+		if ts := pc.extractTimestampFromRecord(record); !ts.IsZero() {
+			if !timestamps.HasTimestamp {
+				timestamps.MinTimestamp = ts
+				timestamps.MaxTimestamp = ts
+				timestamps.HasTimestamp = true
+			} else {
+				if ts.Before(timestamps.MinTimestamp) {
+					timestamps.MinTimestamp = ts
+				}
+				if ts.After(timestamps.MaxTimestamp) {
+					timestamps.MaxTimestamp = ts
+				}
+			}
+
+			// Also update state timestamps
+			if !state.timestamps.HasTimestamp {
+				state.timestamps.MinTimestamp = ts
+				state.timestamps.MaxTimestamp = ts
+				state.timestamps.HasTimestamp = true
+			} else {
+				if ts.Before(state.timestamps.MinTimestamp) {
+					state.timestamps.MinTimestamp = ts
+				}
+				if ts.After(state.timestamps.MaxTimestamp) {
+					state.timestamps.MaxTimestamp = ts
+				}
+			}
+		}
+
+		*batch = append(*batch, record)
+		recordsProcessed++
+		totalSize += int64(len(line))
+
+		// Write batch if checkpoint reached
+		if len(*batch) >= checkpointRecords {
+			pc.sortRecordsByTimestamp(*batch)
+			if err := pc.writeBatchToState(state, schema, *batch); err != nil {
+				return recordsProcessed, totalSize, timestamps, fmt.Errorf("failed to write batch: %w", err)
+			}
+			*batch = (*batch)[:0]
+
+			// Check if we need to split to a new file
+			currentSize := state.s3Writer.BytesWritten()
+			if currentSize >= maxFileSizeBytes {
+				log.Infof("File size %d bytes exceeds limit %d bytes, creating new part", currentSize, maxFileSizeBytes)
+				newState, err := createNewWriter()
+				if err != nil {
+					return recordsProcessed, totalSize, timestamps, fmt.Errorf("failed to create new writer: %w", err)
+				}
+				// Update state pointer (caller's state variable is updated via createNewWriter)
+				_ = newState // State is updated in createNewWriter callback
+			}
 		}
 	}
 
-	result.RecordsProcessed = recordsProcessed
-	result.TotalSize = totalSize
-	result.FileSize = outputSize
-	result.ConvertTime = time.Since(startTime)
-	result.OutputFile = finalKey
-
-	// Set aggregated timestamps on result
-	if aggregatedTimestamps.HasTimestamp {
-		result.MinTimestamp = aggregatedTimestamps.MinTimestamp
-		result.MaxTimestamp = aggregatedTimestamps.MaxTimestamp
-		log.Debugf("Timestamp range: %s to %s", result.MinTimestamp.Format(time.RFC3339), result.MaxTimestamp.Format(time.RFC3339))
+	if err := scanner.Err(); err != nil {
+		return recordsProcessed, totalSize, timestamps, fmt.Errorf("error reading file: %w", err)
 	}
 
-	log.Infof("Streaming conversion completed: %d records, input: %d bytes, output: %d bytes, time: %v",
-		recordsProcessed, totalSize, outputSize, result.ConvertTime)
-	return finalKey, result, nil
+	return recordsProcessed, totalSize, timestamps, nil
 }
 
 // analyzeNDJSONSchema reads the NDJSON file and infers the Arrow schema
@@ -847,74 +1066,6 @@ type FileTimestamps struct {
 	MinTimestamp time.Time
 	MaxTimestamp time.Time
 	HasTimestamp bool
-}
-
-// processS3FileStreaming processes a single S3 file in streaming mode
-// Returns: recordsProcessed, totalSize, timestamps, error
-func (pc *ParquetConverter) processS3FileStreaming(ctx context.Context, file storage.S3Object, s3Client *storage.S3SourceClient, batch *[]map[string]interface{}, schema *arrow.Schema, writer *pqarrow.FileWriter, checkpointRecords int) (int64, int64, *FileTimestamps, error) {
-	reader, err := s3Client.GetObject(ctx, file.Key)
-	if err != nil {
-		return 0, 0, nil, fmt.Errorf("failed to get object: %w", err)
-	}
-	defer reader.Close()
-
-	// Handle gzip decompression
-	var contentReader io.Reader = reader
-	if strings.HasSuffix(strings.ToLower(file.Key), ".gz") {
-		gzipReader, err := gzip.NewReader(reader)
-		if err != nil {
-			return 0, 0, nil, fmt.Errorf("failed to create gzip reader: %w", err)
-		}
-		defer gzipReader.Close()
-		contentReader = gzipReader
-	}
-
-	scanner := bufio.NewScanner(contentReader)
-	recordsProcessed := int64(0)
-	totalSize := int64(0)
-	timestamps := &FileTimestamps{}
-
-	for scanner.Scan() {
-		var record map[string]interface{}
-		line := scanner.Bytes()
-		if err := sonic.Unmarshal(line, &record); err != nil {
-			continue // Skip invalid JSON lines
-		}
-
-		// Track timestamps from InfoTimestamp field
-		if ts := pc.extractTimestampFromRecord(record); !ts.IsZero() {
-			if !timestamps.HasTimestamp {
-				timestamps.MinTimestamp = ts
-				timestamps.MaxTimestamp = ts
-				timestamps.HasTimestamp = true
-			} else {
-				if ts.Before(timestamps.MinTimestamp) {
-					timestamps.MinTimestamp = ts
-				}
-				if ts.After(timestamps.MaxTimestamp) {
-					timestamps.MaxTimestamp = ts
-				}
-			}
-		}
-
-		*batch = append(*batch, record)
-		recordsProcessed++
-		totalSize += int64(len(line))
-
-		// Write batch if checkpoint reached
-		if len(*batch) >= checkpointRecords {
-			if err := pc.writeBatch(writer, schema, *batch); err != nil {
-				return recordsProcessed, totalSize, timestamps, fmt.Errorf("failed to write batch: %w", err)
-			}
-			*batch = (*batch)[:0] // Reset batch
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		return recordsProcessed, totalSize, timestamps, fmt.Errorf("error reading file: %w", err)
-	}
-
-	return recordsProcessed, totalSize, timestamps, nil
 }
 
 // extractTimestampFromRecord extracts timestamp from common timestamp fields
