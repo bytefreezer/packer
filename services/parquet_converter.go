@@ -439,6 +439,9 @@ func (pc *ParquetConverter) processS3FileStreamingWithSplit(
 			continue // Skip invalid JSON lines
 		}
 
+		// Add BfTs (ByteFreezer Timestamp) - Unix milliseconds for easy querying
+		record["BfTs"] = time.Now().UnixMilli()
+
 		// Track timestamps
 		if ts := pc.extractTimestampFromRecord(record); !ts.IsZero() {
 			if !timestamps.HasTimestamp {
@@ -560,8 +563,16 @@ func (pc *ParquetConverter) analyzeNDJSONSchema(filePath string) (*arrow.Schema,
 		return nil, 0, fmt.Errorf("error reading file: %w", err)
 	}
 
-	// Build Arrow schema
-	fields := make([]arrow.Field, 0, len(fieldTypes))
+	// Build Arrow schema with BfTs as first field
+	fields := make([]arrow.Field, 0, len(fieldTypes)+1)
+
+	// Add BfTs (ByteFreezer Timestamp) as first field - Unix milliseconds
+	fields = append(fields, arrow.Field{
+		Name:     "BfTs",
+		Type:     &arrow.Int64Type{},
+		Nullable: false,
+	})
+
 	for name, dataType := range fieldTypes {
 		fields = append(fields, arrow.Field{
 			Name:     name,
@@ -729,6 +740,9 @@ func (pc *ParquetConverter) convertToParquet(inputPath, outputPath string, schem
 			log.Warnf("Skipping invalid JSON line: %s", err)
 			continue
 		}
+
+		// Add BfTs (ByteFreezer Timestamp) - Unix milliseconds for easy querying
+		jsonObj["BfTs"] = time.Now().UnixMilli()
 
 		records = append(records, jsonObj)
 
@@ -1000,6 +1014,15 @@ func (pc *ParquetConverter) analyzeSchemaFromS3Files(ctx context.Context, files 
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze schema from %s: %w", files[0].Key, err)
 	}
+
+	// Prepend BfTs (ByteFreezer Timestamp) as first field - Unix milliseconds
+	bfTsField := arrow.Field{
+		Name:     "BfTs",
+		Type:     &arrow.Int64Type{},
+		Nullable: false,
+	}
+	newFields := append([]arrow.Field{bfTsField}, schema.Fields()...)
+	schema = arrow.NewSchema(newFields, nil)
 
 	return schema, nil
 }
