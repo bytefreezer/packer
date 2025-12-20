@@ -566,7 +566,7 @@ func (w *UploadWorker) handleJobResult(ctx context.Context, job *UploadJob, resu
 		// Max attempts reached, send failure result (only for finite retry jobs)
 		log.Errorf("Job %s failed permanently after %d attempts", job.ID, job.Attempts)
 
-		// TODO: Implement failure tracking with PostgreSQL
+		// TODO: Implement failure tracking via Control API
 		// Increment tenant failure counter
 		/*if w.pool.config.TenantFailureTracker != nil {
 			thresholdReached, failureCount, err := w.pool.config.TenantFailureTracker.IncrementFailureCount(

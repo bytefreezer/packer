@@ -268,7 +268,7 @@ func (tp *TenantProcessor) processDataset(ctx context.Context, tenant *domain.Te
 	heartbeatStop := make(chan struct{})
 	defer close(heartbeatStop)
 
-	// Check if lock client supports heartbeat (PostgreSQL does, others might not)
+	// Check if lock client supports heartbeat (Control API does)
 	if heartbeatClient, ok := tp.lockClient.(storage.HeartbeatLockClient); ok {
 		go tp.maintainLockHeartbeat(ctx, heartbeatClient, lockKey, tp.instanceID, heartbeatStop)
 	}

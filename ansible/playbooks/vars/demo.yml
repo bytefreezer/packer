@@ -49,7 +49,7 @@ config:
   control_service:
     enabled: true
     base_url: "https://api.bytefreezer.com"
-    api_key: "bytefreezer-service-api-key-8f4a2d1b-3c5e-4f6a-9b8c-7d2e1f3a4b5c"
+    # api_key comes from AWX variable: bytefreezer_api_key
     timeout_seconds: 30
 
   otel:
@@ -70,14 +70,14 @@ config:
       processing_dir_max_age_hours: 2
       orphaned_files_max_age_hours: 24
 
-  # S3 source configuration - where compressed NDJSON files are read from (Managed deployment)
+  # S3 source configuration - where compressed NDJSON files are read from (Demo deployment)
   s3source:
     bucket_name: "piper"
     region: "us-east-1"
-    endpoint: "localhost:9000"
+    # endpoint comes from AWX variable: bytefreezer_s3_endpoint
     ssl: false
-    access_key: "AKIAQNXBAHUKIMJP26P6"
-    secret_key: "SECRET_KEY_AKIAQNXBAHUKIMJP26P6"
+    # access_key comes from AWX variable: bytefreezer_s3_access_key
+    # secret_key comes from AWX variable: bytefreezer_s3_secret_key
     use_iam_role: false
 
   # S3 destination configuration removed - now using per-tenant:dataset destinations

@@ -25,7 +25,7 @@ bytefreezer:
 control_service:
   enabled: {{ config.control_service.enabled | lower }}
   base_url: {{ config.control_service.base_url }}
-  api_key: "{{ config.control_service.api_key | default('bytefreezer-service-api-key-8f4a2d1b-3c5e-4f6a-9b8c-7d2e1f3a4b5c') }}"
+  api_key: "{{ bytefreezer_api_key }}"
   timeout_seconds: {{ config.control_service.timeout_seconds }}
 
 # OpenTelemetry configuration
@@ -55,10 +55,10 @@ housekeeping:
 s3source:
   bucket_name: {{ config.s3source.bucket_name }}
   region: {{ config.s3source.region }}
-  endpoint: {{ config.s3source.endpoint }}
+  endpoint: "{{ bytefreezer_s3_endpoint }}"
   ssl: {{ config.s3source.ssl | lower }}
-  access_key: {{ config.s3source.access_key }}
-  secret_key: {{ config.s3source.secret_key }}
+  access_key: "{{ bytefreezer_s3_access_key }}"
+  secret_key: "{{ bytefreezer_s3_secret_key }}"
   use_iam_role: {{ config.s3source.use_iam_role | default(false) | lower }}
 
 # S3 destination configuration removed - now using per-tenant:dataset destinations

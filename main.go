@@ -42,7 +42,7 @@ func Run() error {
 		cfgFilePath = flag.String("config", "config.yaml", "Path to configuration file")
 		showVersion = flag.Bool("version", false, "Show version and exit")
 		showHelp    = flag.Bool("help", false, "Show help and exit")
-		clearLocks  = flag.Bool("clear-locks", false, "Clear all PostgreSQL locks and exit")
+		clearLocks  = flag.Bool("clear-locks", false, "Clear all locks via Control API and exit")
 	)
 
 	flag.Parse()
@@ -78,7 +78,7 @@ func Run() error {
 
 	// Handle clear-locks flag
 	if *clearLocks {
-		return clearPostgreSQLLocks(*cfgFilePath)
+		return clearAllLocks(*cfgFilePath)
 	}
 
 	// Initialize OpenTelemetry provider if enabled
@@ -270,7 +270,7 @@ func Run() error {
 			log.Debug("Cache cleanup handled by orchestrator housekeeping")
 		}
 
-		// Step 4: Cleanup stale locks (if PostgreSQL lock client is available and enabled)
+		// Step 4: Cleanup stale locks (if lock client is available and enabled)
 		if conf.Housekeeping.Cleanup.LockCleanup.Enabled {
 			if heartbeatClient, ok := conf.GetLockClient().(storage.HeartbeatLockClient); ok {
 				log.Debug("Cleaning up stale locks...")
@@ -421,9 +421,8 @@ func (svc *Server) Stop(timeout time.Duration) error {
 	return nil
 }
 
-// clearPostgreSQLLocks clears all PostgreSQL locks for clean restarts
-func clearPostgreSQLLocks(configPath string) error {
-	// Load config to get PostgreSQL connection details
+// clearAllLocks clears all locks via Control API for clean restarts
+func clearAllLocks(configPath string) error {
 	var cfg config.Config
 	err := config.LoadConfig(configPath, envPrefix, &cfg)
 	if err != nil {
@@ -455,10 +454,7 @@ func clearPostgreSQLLocks(configPath string) error {
 	fmt.Printf("Clearing all locks from lock service...\n")
 	ctx := context.Background()
 
-	// Try both implementations
-	if pgClient, ok := lockClient.(*storage.PostgreSQLLockClient); ok {
-		err = pgClient.ClearAllLocks(ctx)
-	} else if apiClient, ok := lockClient.(*storage.ControlAPILockClient); ok {
+	if apiClient, ok := lockClient.(*storage.ControlAPILockClient); ok {
 		err = apiClient.ClearAllLocks(ctx)
 	} else {
 		return fmt.Errorf("lock client does not support ClearAllLocks operation")

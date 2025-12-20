@@ -76,17 +76,6 @@ type S3Config struct {
 	UseIamRole bool   `mapstructure:"use_iam_role"`
 }
 
-type PostgreSQLConfig struct {
-	Host                     string `mapstructure:"host"`
-	Port                     int    `mapstructure:"port"`
-	Database                 string `mapstructure:"database"`
-	Username                 string `mapstructure:"username"`
-	Password                 string `mapstructure:"password"`
-	SSLMode                  string `mapstructure:"ssl_mode"`
-	MaxConnections           int    `mapstructure:"max_connections"`
-	ConnectionTimeoutSeconds int    `mapstructure:"connection_timeout_seconds"`
-}
-
 type ParquetConfig struct {
 	MaxFileSizeMB     int    `mapstructure:"max_file_size_mb"`
 	TimeoutSeconds    int    `mapstructure:"timeout_seconds"`
@@ -219,7 +208,7 @@ func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 	return nil
 }
 
-// InitializeComponents initializes all components (tenant, SOC, S3, PostgreSQL)
+// InitializeComponents initializes all components (tenant, SOC, S3, Control API)
 func (cfg *Config) InitializeComponents() error {
 	// Initialize SOC alert client
 	cfg.SOCAlertClient = alerts.NewSOCAlertClient(alerts.AlertClientConfig{

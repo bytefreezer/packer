@@ -49,12 +49,3 @@ type HeartbeatLockClient interface {
 	CleanupInstanceLocks(ctx context.Context, instanceID string) error
 }
 
-// GetLockClient returns the appropriate lock client based on configuration
-func GetLockClient(cfg interface{}) LockClient {
-	switch client := cfg.(type) {
-	case *PostgreSQLLockClient:
-		return client
-	default:
-		return nil
-	}
-}

@@ -5,12 +5,13 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
-	"github.com/bytedance/sonic"
 	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/domain"
 	"github.com/bytefreezer/packer/storage"
@@ -36,7 +37,7 @@ func NewMetadataManagerV2(s3DestinationManager *storage.S3DestinationManager, lo
 	}
 }
 
-// UpdateMetadataAfterUpload incrementally updates metadata using PostgreSQL scratch pad
+// UpdateMetadataAfterUpload incrementally updates metadata using Control API
 func (mm *MetadataManagerV2) UpdateMetadataAfterUpload(ctx context.Context, tenant *domain.Tenant, dataset *domain.Dataset, uploadedFilePath string) error {
 	startTime := time.Now()
 
@@ -102,11 +103,11 @@ func (mm *MetadataManagerV2) UpdateMetadataAfterUpload(ctx context.Context, tena
 	return nil
 }
 
-// regenerateMetadataFromDatabase generates metadata files from PostgreSQL data
+// regenerateMetadataFromDatabase generates metadata files from Control API data
 func (mm *MetadataManagerV2) regenerateMetadataFromDatabase(ctx context.Context, tenantID, datasetID string, s3Dest *domain.S3Destination, partitionPath string) error {
 	log.Debugf("Regenerating metadata from database for %s:%s partition %s", tenantID, datasetID, partitionPath)
 
-	// Get all files for this partition from PostgreSQL
+	// Get all files for this partition from Control API
 	files, err := mm.metadataClient.GetFileMetadataByPartition(ctx, tenantID, datasetID, partitionPath)
 	if err != nil {
 		return fmt.Errorf("failed to get file metadata from database: %w", err)
@@ -170,7 +171,7 @@ func (mm *MetadataManagerV2) regenerateMetadataFromDatabase(ctx context.Context,
 func (mm *MetadataManagerV2) regenerateRootMetadataFromDatabase(ctx context.Context, tenantID, datasetID string, s3Dest *domain.S3Destination) error {
 	log.Debugf("Regenerating root-level metadata from database for %s:%s", tenantID, datasetID)
 
-	// Get ALL files for this tenant:dataset from PostgreSQL (across all partitions)
+	// Get ALL files for this tenant:dataset from Control API (across all partitions)
 	files, err := mm.metadataClient.GetAllFileMetadata(ctx, tenantID, datasetID)
 	if err != nil {
 		return fmt.Errorf("failed to get all file metadata from database: %w", err)
@@ -301,7 +302,7 @@ func (mm *MetadataManagerV2) updateGenerationStatus(ctx context.Context, tenantI
 
 	// Calculate schema hash for change detection
 	// For now, use a simple approach - in production you'd calculate from actual schema
-	schemaHash := storage.CalculateSchemaHash(fmt.Sprintf("%s:%s:%s", tenantID, datasetID, partitionPath))
+	schemaHash := calculateSchemaHash(fmt.Sprintf("%s:%s:%s", tenantID, datasetID, partitionPath))
 
 	status := &storage.MetadataGenerationStatus{
 		TenantID:          tenantID,
@@ -368,7 +369,7 @@ func (mm *MetadataManagerV2) getPartitionPath(uploadedFilePath string) string {
 func (mm *MetadataManagerV2) GetMetadataInfo(ctx context.Context, tenantID, datasetID string, s3Dest *domain.S3Destination, directory string) (*MetadataInfo, error) {
 	partitionPath := mm.getPartitionPath(directory)
 
-	// Get data from PostgreSQL first
+	// Get data from Control API first
 	summary, err := mm.metadataClient.GetMetadataSummary(ctx, tenantID, datasetID, partitionPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata summary: %w", err)
@@ -427,7 +428,7 @@ func (mm *MetadataManagerV2) CleanupOrphanedMetadata(ctx context.Context, tenant
 func (mm *MetadataManagerV2) GetStats(ctx context.Context) (map[string]interface{}, error) {
 	// Return basic statistics about metadata management
 	return map[string]interface{}{
-		"implementation": "postgresql-v2",
+		"implementation": "control-api-v2",
 		"features": []string{
 			"incremental-updates",
 			"schema-validation",
@@ -435,6 +436,12 @@ func (mm *MetadataManagerV2) GetStats(ctx context.Context) (map[string]interface
 			"distributed-locking",
 		},
 	}, nil
+}
+
+// calculateSchemaHash calculates SHA256 hash for schema change detection
+func calculateSchemaHash(input string) string {
+	hash := sha256.Sum256([]byte(input))
+	return fmt.Sprintf("%x", hash)
 }
 
 // MetadataInfo is defined in metadata_manager.go

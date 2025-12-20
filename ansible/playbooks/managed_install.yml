@@ -11,10 +11,45 @@
         path: "{{ paths.service_path }}"
       register: service_exists
 
-    - name: Fail if service already installed
-      fail:
-        msg: "ByteFreezer Packer service is already installed. Use remove playbook first."
+    # Always clean up existing installation before reinstalling
+    - name: Stop and disable existing service
+      ansible.builtin.shell: |
+        sudo systemctl stop {{ service.name }} || true
+        sudo systemctl disable {{ service.name }} || true
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
       when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Remove existing systemd service file
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.service_path }}"
+        timeout 30 sudo systemctl daemon-reload || echo "daemon-reload completed or timed out"
+      when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Remove existing logrotate configuration
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.logrotate_path }}"
+      when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Remove existing binary
+      ansible.builtin.shell: |
+        sudo rm -f "{{ paths.binary_path }}"
+      when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Remove existing configuration directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.config_dir }}"
+      when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Remove existing log directory
+      ansible.builtin.shell: |
+        sudo rm -rf "{{ paths.log_dir }}"
+      when: service_exists.stat.exists
+      ignore_errors: yes
 
   tasks:
 

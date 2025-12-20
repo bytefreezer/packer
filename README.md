@@ -16,7 +16,7 @@ ByteFreezer Packer reads compressed NDJSON files from a source S3 bucket, proces
 - **Data Lineage** - Optional raw NDJSON storage (gzip compressed) for auditing and debugging
 - **Async Processing** - Worker pool architecture with retry mechanisms
 - **SOC Integration** - Comprehensive alerting for all failure scenarios
-- **Distributed Locking** - PostgreSQL-based coordination for multi-instance deployments
+- **Distributed Locking** - Control API-based coordination for multi-instance deployments
 
 ## Architecture
 
@@ -28,7 +28,7 @@ ByteFreezer Packer reads compressed NDJSON files from a source S3 bucket, proces
                                 │
                                 ▼
                        ┌──────────────────┐
-                       │  PostgreSQL      │
+                       │  Control API     │
                        │  (Locks)         │
                        └──────────────────┘
 ```
@@ -36,7 +36,7 @@ ByteFreezer Packer reads compressed NDJSON files from a source S3 bucket, proces
 ### Processing Pipeline
 
 1. **Housekeeping** - Periodic tenant discovery and health checks
-2. **Distributed Locking** - Acquire tenant-specific locks via PostgreSQL
+2. **Distributed Locking** - Acquire tenant-specific locks via Control API
 3. **File Aggregation** - Download and decompress .ndjson.gz files from `source-bucket/tenant-id/dataset-id/` for each dataset
 4. **Transformation** - Optional JSON flattening and schema normalization
 5. **Parquet Conversion** - Convert to columnar format with ZSTD compression
@@ -221,17 +221,12 @@ secretsmanager:
   endpoint: ""                     # Custom endpoint (optional, for LocalStack)
   ssl: true                        # Use SSL for connections
 
-# PostgreSQL distributed locking configuration (preferred)
-postgres:
-  host: "localhost"                # PostgreSQL host
-  port: 5432                       # PostgreSQL port
-  database: "bytefreezer"          # Database name
-  username: "bytefreezer"          # Database username
-  password: "bytefreezer123"       # Database password
-  ssl_mode: "disable"              # SSL mode (disable, require, verify-ca, verify-full)
-  schema: "public"                 # Database schema
-  max_connections: 10              # Maximum connection pool size
-  connection_timeout: 30           # Connection timeout in seconds
+# Control Service configuration (for distributed locking and metadata)
+control_service:
+  enabled: true                    # Enable Control Service integration
+  base_url: "http://localhost:8082"  # Control Service URL
+  api_key: "your-api-key"          # Service API key (from AWX: bytefreezer_api_key)
+  timeout_seconds: 30              # Request timeout
 
 # Housekeeping process configuration
 housekeeping:
@@ -307,19 +302,14 @@ secretsmanager:
   secret_key: ""                       # Optional static credentials
 ```
 
-## PostgreSQL Distributed Locking Configuration
+## Control API Distributed Locking Configuration
 
 ```yaml
-postgres:
-  host: "localhost"                    # PostgreSQL host
-  port: 5432                           # PostgreSQL port
-  database: "bytefreezer"              # Database name
-  username: "bytefreezer"              # Database username
-  password: "bytefreezer123"           # Database password
-  ssl_mode: "disable"                  # SSL mode (disable, require, verify-ca, verify-full)
-  schema: "public"                     # Database schema
-  max_connections: 10                  # Maximum connection pool size
-  connection_timeout: 30               # Connection timeout in seconds
+control_service:
+  enabled: true                        # Enable Control Service integration
+  base_url: "http://localhost:8082"    # Control Service URL
+  api_key: "your-api-key"              # Service API key (from AWX: bytefreezer_api_key)
+  timeout_seconds: 30                  # Request timeout
 
 # Lock heartbeat system - prevents stale locks from blocking processing
 housekeeping:
@@ -331,7 +321,7 @@ housekeeping:
 
 ### Lock Heartbeat System
 
-The service implements an advanced lock heartbeat mechanism to prevent stale locks from blocking processing:
+The service implements an advanced lock heartbeat mechanism via Control API to prevent stale locks from blocking processing:
 
 - **Active Heartbeats**: Processing instances update lock heartbeat every 2 minutes
 - **Stale Detection**: Housekeeping removes locks with heartbeat older than 5 minutes
@@ -559,7 +549,7 @@ Comprehensive health monitoring with circuit breaker functionality at both tenan
 - **Dataset isolation** - Failed datasets are skipped without affecting other datasets for the same tenant
 - **24-hour failure window** - Failure count resets automatically after 24 hours
 - **Automatic disabling** of problematic datasets after threshold breaches (default: 3 failures)
-- **Global coordination** - PostgreSQL-based tracking works across multiple service instances
+- **Global coordination** - Control API-based tracking works across multiple service instances
 - **Critical alerting** - SOC alerts when datasets are disabled due to failures
 
 ### Configuration
@@ -624,7 +614,7 @@ soc:
 
 ## Multi-Instance Deployment
 
-bytefreezer-packer is designed for multi-instance deployment with distributed coordination via PostgreSQL locking.
+bytefreezer-packer is designed for multi-instance deployment with distributed coordination via Control API locking.
 
 ### Parallel Processing Benefits
 
@@ -643,14 +633,12 @@ bytefreezer:
   controller: "http://controller:8080/api/tenants"
   cachepath: "/tmp/bytefreezer-${HOSTNAME}"  # Instance-specific cache path
 
-# PostgreSQL coordination (shared across instances)
-postgres:
-  host: "postgres.example.com"
-  port: 5432
-  database: "bytefreezer"
-  username: "bytefreezer"
-  password: "secure_password"
-  ssl_mode: "require"
+# Control Service coordination (shared across instances)
+control_service:
+  enabled: true
+  base_url: "http://control.example.com:8082"
+  api_key: "your-service-api-key"
+  timeout_seconds: 30
 
 # Failure tracking disabled in current version
 
@@ -855,7 +843,7 @@ services:
       - "4566:4566"  # All AWS services
       - "4571:4571"  # Alternate port
     environment:
-      - SERVICES=s3,secretsmanager  # PostgreSQL used instead of DynamoDB
+      - SERVICES=s3,secretsmanager  # Control API used instead of DynamoDB
       - DEBUG=1
       - DATA_DIR=/tmp/localstack/data
     volumes:
@@ -879,23 +867,23 @@ AWS_CMD="aws --endpoint-url=$ENDPOINT --region us-east-1"
 
 echo "🚀 Setting up LocalStack for bytefreezer-packer development..."
 
-# DynamoDB table creation disabled - now using PostgreSQL for locking
-echo "📊 DynamoDB table creation disabled - now using PostgreSQL for locking"
-# Disabled - PostgreSQL used instead: $AWS_CMD dynamodb create-table \
+# DynamoDB table creation disabled - now using Control API for locking
+echo "📊 DynamoDB table creation disabled - now using Control API for locking"
+# Disabled - Control API used instead: $AWS_CMD dynamodb create-table \
     --table-name tenant-locks \
     --attribute-definitions AttributeName=tenant_id,AttributeType=S \
     --key-schema AttributeName=tenant_id,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST \
     --table-class STANDARD
 
-# Disabled - PostgreSQL used instead: $AWS_CMD dynamodb create-table \
+# Disabled - Control API used instead: $AWS_CMD dynamodb create-table \
     --table-name tenant-failures \
     --attribute-definitions AttributeName=tenant_id,AttributeType=S \
     --key-schema AttributeName=tenant_id,KeyType=HASH \
     --billing-mode PAY_PER_REQUEST \
     --table-class STANDARD
 
-# Disabled - PostgreSQL used instead: $AWS_CMD dynamodb create-table \
+# Disabled - Control API used instead: $AWS_CMD dynamodb create-table \
     --table-name dataset-failures \
     --attribute-definitions AttributeName=dataset_key,AttributeType=S \
     --key-schema AttributeName=dataset_key,KeyType=HASH \
@@ -903,11 +891,11 @@ echo "📊 DynamoDB table creation disabled - now using PostgreSQL for locking"
     --table-class STANDARD
 
 # Enable TTL on failure tracking tables
-# Disabled - PostgreSQL used instead: $AWS_CMD dynamodb update-time-to-live \
+# Disabled - Control API used instead: $AWS_CMD dynamodb update-time-to-live \
     --table-name tenant-failures \
     --time-to-live-specification "Enabled=true,AttributeName=ttl"
 
-# Disabled - PostgreSQL used instead: $AWS_CMD dynamodb update-time-to-live \
+# Disabled - Control API used instead: $AWS_CMD dynamodb update-time-to-live \
     --table-name dataset-failures \
     --time-to-live-specification "Enabled=true,AttributeName=ttl"
 
@@ -971,8 +959,8 @@ $AWS_CMD secretsmanager create-secret \
 
 # Verify setup
 echo "✅ Verifying LocalStack setup..."
-echo "DynamoDB setup disabled - using PostgreSQL:"
-# Disabled - PostgreSQL used instead: $AWS_CMD dynamodb list-tables | jq '.TableNames'
+echo "DynamoDB setup disabled - using Control API:"
+# Disabled - Control API used instead: $AWS_CMD dynamodb list-tables | jq '.TableNames'
 
 echo "S3 buckets:"
 $AWS_CMD s3 ls
@@ -1333,7 +1321,7 @@ You're free to use, modify, and self-host. You cannot offer it as a managed serv
 - Provides operational visibility into tenant issues
 - Enables automatic recovery workflows
 
-### Why PostgreSQL for Coordination?
-- Serverless scaling without operational overhead
+### Why Control API for Coordination?
+- Centralized coordination via Control Service
 - Strong consistency for distributed locking
 - TTL support for automatic cleanup

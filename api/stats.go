@@ -44,7 +44,7 @@ func (api *API) HealthCheck() usecase.IOInteractorOf[models.EmptyRequest, models
 			resp.Services["s3_source"] = HEALTHY
 		}
 
-		// Check locking backend connectivity (DynamoDB or PostgreSQL)
+		// Check locking backend connectivity (Control API)
 		if err := api.Services.CheckLockingConnectivity(); err != nil {
 			resp.Services["locking"] = UNHEALTY + ": " + err.Error()
 			allHealthy = false
@@ -118,7 +118,7 @@ func (api *API) GetConfig() usecase.IOInteractorOf[models.EmptyRequest, models.C
 
 		// Secrets Manager is not used in packer
 
-		// DynamoDB lock is not used in packer - using PostgreSQL instead
+		// Locking is handled via Control API
 
 		// Upload pool configuration
 		resp.UploadPool = models.UploadPoolConfig{

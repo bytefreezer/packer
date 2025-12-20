@@ -105,7 +105,7 @@ func (s *Services) CheckS3SourceConnectivity() error {
 	return err
 }
 
-// CheckLockingConnectivity performs an actual connectivity test to the locking backend (PostgreSQL)
+// CheckLockingConnectivity performs an actual connectivity test to the locking backend (Control API)
 func (s *Services) CheckLockingConnectivity() error {
 	// Check lock client connectivity
 	lockClient := s.Config.GetLockClient()
