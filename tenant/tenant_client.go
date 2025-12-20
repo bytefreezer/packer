@@ -6,12 +6,9 @@ package tenant
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/bytedance/sonic"
 	client "github.com/bytefreezer/goodies/control-client"
 	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/domain"
@@ -26,8 +23,7 @@ type AppConfig struct {
 
 // BytefreezerConfig represents bytefreezer configuration
 type BytefreezerConfig struct {
-	Controller string `mapstructure:"controller"` // Deprecated - use control_service
-	CachePath  string `mapstructure:"cachepath"`
+	CachePath string `mapstructure:"cachepath"`
 }
 
 // ControlServiceConfig represents control service configuration
@@ -86,23 +82,13 @@ func (tc *TenantClient) FetchTenants() ([]domain.Tenant, error) {
 		log.Warnf("Failed to fetch tenants from Control Service: %v, falling back", err)
 	}
 
-	// Priority 2: Try legacy controller endpoint (if configured)
-	if tc.config.Bytefreezer.Controller != "" {
-		tenants, err := tc.fetchTenantsFromLegacyController()
-		if err == nil {
-			log.Debugf("Successfully fetched %d tenants from legacy controller", len(tenants))
-			return tenants, nil
-		}
-		log.Warnf("Failed to fetch tenants from legacy controller: %v, falling back", err)
-	}
-
-	// Priority 3: Fallback to dev mode / fake data
+	// Priority 2: Fallback to dev mode / fake data
 	if tc.config.Dev {
 		log.Warn("Using fake tenant data (dev mode fallback)")
 		return tc.getFakeTenants(), nil
 	}
 
-	return nil, fmt.Errorf("no tenant data source available: control service, controller, and dev mode all unavailable")
+	return nil, fmt.Errorf("no tenant data source available: control service and dev mode both unavailable")
 }
 
 // fetchTenantsFromControlService fetches tenants from the Control Service
@@ -238,93 +224,6 @@ func (tc *TenantClient) fetchTenantsFromControlService(ctx context.Context) ([]d
 
 	log.Debugf("Total tenants fetched from Control Service: %d", len(allTenants))
 	return allTenants, nil
-}
-
-// fetchTenantsFromLegacyController fetches tenants from the legacy controller endpoint
-func (tc *TenantClient) fetchTenantsFromLegacyController() ([]domain.Tenant, error) {
-	controllerURL := tc.config.Bytefreezer.Controller
-	if controllerURL == "" {
-		return nil, fmt.Errorf("controller URL not configured")
-	}
-
-	log.Debugf("Fetching tenants from legacy controller: %s", controllerURL)
-
-	resp, err := tc.httpClient.Get(controllerURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch tenants: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("controller returned status %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var tenants []domain.Tenant
-	if err := sonic.Unmarshal(body, &tenants); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal tenants response: %w", err)
-	}
-
-	return tenants, nil
-}
-
-// DisableTenant calls the controller to disable a tenant
-func (tc *TenantClient) DisableTenant(tenantID string, reason string) error {
-	// In development mode, just log and return
-	if tc.config.Dev {
-		log.Warnf("Development mode - would disable tenant %s: %s", tenantID, reason)
-		return nil
-	}
-
-	controllerURL := tc.config.Bytefreezer.Controller
-	if controllerURL == "" {
-		return fmt.Errorf("controller URL not configured")
-	}
-
-	// Build disable endpoint URL
-	disableURL := fmt.Sprintf("%s/%s/disable/%s",
-		strings.TrimSuffix(controllerURL, "/tenants"),
-		"tenant", tenantID)
-
-	log.Infof("Disabling tenant %s via controller: %s", tenantID, disableURL)
-
-	// Create POST request with reason in body
-	reqBody := map[string]string{
-		"reason":      reason,
-		"disabled_by": "bytefreezer-packer",
-		"disabled_at": time.Now().UTC().Format(time.RFC3339),
-	}
-
-	bodyBytes, err := sonic.Marshal(reqBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal disable request body: %w", err)
-	}
-
-	req, err := http.NewRequest("POST", disableURL, strings.NewReader(string(bodyBytes)))
-	if err != nil {
-		return fmt.Errorf("failed to create disable request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("User-Agent", fmt.Sprintf("%s/%s", tc.config.App.Name, tc.config.App.Version))
-
-	resp, err := tc.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("failed to call disable tenant endpoint: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("controller returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	log.Infof("Successfully disabled tenant %s via controller", tenantID)
-	return nil
 }
 
 // getFakeTenants returns fake tenant data for development

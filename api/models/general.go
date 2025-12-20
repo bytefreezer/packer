@@ -39,8 +39,7 @@ type ServerConfig struct {
 }
 
 type BytefreezerConfig struct {
-	Controller string `json:"controller"`
-	CachePath  string `json:"cache_path"`
+	CachePath string `json:"cache_path"`
 }
 
 type SOCConfig struct {

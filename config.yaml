@@ -14,8 +14,6 @@ server:
   #other ports if needed
 
 bytefreezer:
-  #this is the bytefreezer controller endpoint for this service (deprecated - use control_service)
-  controller: http://localhost:8080/tenants
   spool_path: ./spool  # Spool directory for queue/retry/dlq
   cache_path: ./cache  # Cache directory for processing
 

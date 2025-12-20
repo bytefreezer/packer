@@ -95,8 +95,7 @@ func (api *API) GetConfig() usecase.IOInteractorOf[models.EmptyRequest, models.C
 
 		// ByteFreezer configuration
 		resp.Bytefreezer = models.BytefreezerConfig{
-			Controller: cfg.Bytefreezer.Controller,
-			CachePath:  cfg.Bytefreezer.CachePath,
+			CachePath: cfg.Bytefreezer.CachePath,
 		}
 
 		// SOC configuration

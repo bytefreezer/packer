@@ -54,9 +54,8 @@ type Config struct {
 }
 
 type Bytefreezer struct {
-	Controller string `mapstructure:"controller"` // Deprecated - use control_service instead
-	SpoolPath  string `mapstructure:"spool_path"`
-	CachePath  string `mapstructure:"cache_path"`
+	SpoolPath string `mapstructure:"spool_path"`
+	CachePath string `mapstructure:"cache_path"`
 }
 
 type ControlServiceConfig struct {
@@ -377,8 +376,7 @@ func (cfg *Config) InitializeComponents() error {
 			DeploymentType: cfg.App.DeploymentType,
 		},
 		Bytefreezer: tenant.BytefreezerConfig{
-			Controller: cfg.Bytefreezer.Controller,
-			CachePath:  cfg.Bytefreezer.SpoolPath, // Use spool path for caching
+			CachePath: cfg.Bytefreezer.SpoolPath, // Use spool path for caching
 		},
 		ControlService: tenant.ControlServiceConfig{
 			Enabled:        cfg.ControlService.Enabled,
