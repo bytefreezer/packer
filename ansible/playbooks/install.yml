@@ -9,10 +9,17 @@
         path: "{{ paths.service_path }}"
       register: service_exists
 
-    - name: Fail if service already installed
-      fail:
-        msg: "ByteFreezer Packer service is already installed. Use remove playbook first or set force_reinstall=true."
-      when: service_exists.stat.exists and not force_reinstall
+    - name: Stop existing service for update
+      ansible.builtin.systemd:
+        name: "{{ service.name }}"
+        state: stopped
+      when: service_exists.stat.exists
+      ignore_errors: yes
+
+    - name: Display update mode
+      debug:
+        msg: "Updating existing ByteFreezer Packer installation"
+      when: service_exists.stat.exists
 
   tasks:
     - name: Check if release exists

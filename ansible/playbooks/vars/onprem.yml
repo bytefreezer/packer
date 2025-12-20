@@ -134,6 +134,5 @@ remove:
   spool_dir: "{{ bytefreezer_packer_remove_spool_dir | default(false) }}"
 
 # AWX Survey Variables (Override via job template surveys)
-force_reinstall: "{{ force_reinstall | default(false) }}"
 skip_validation: "{{ skip_validation | default(false) }}"
 enable_debug_logging: "{{ enable_debug_logging | default(false) }}"
