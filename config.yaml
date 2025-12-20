@@ -20,7 +20,7 @@ bytefreezer:
 # Control Service configuration (replaces dev mode and legacy controller)
 control_service:
   enabled: true
-  base_url: "http://192.168.86.103:8082"
+  control_url: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_control_url"
   api_key: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_api_key"  # System-wide service API key
   timeout_seconds: 30
 

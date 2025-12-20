@@ -24,7 +24,7 @@ bytefreezer:
 # Control Service configuration (replaces dev mode and legacy controller)
 control_service:
   enabled: {{ config.control_service.enabled | lower }}
-  base_url: {{ config.control_service.base_url }}
+  control_url: "{{ bytefreezer_control_url }}"
   api_key: "{{ bytefreezer_api_key }}"
   timeout_seconds: {{ config.control_service.timeout_seconds }}
 

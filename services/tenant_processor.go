@@ -73,9 +73,9 @@ func NewTenantProcessor(cfg *config.Config, spoolManager *SpoolManager, lockClie
 
 	// Initialize activity reporter if control service is configured
 	var activityReporter *ActivityReporter
-	if cfg.ControlService.Enabled && cfg.ControlService.BaseURL != "" {
+	if cfg.ControlService.Enabled && cfg.ControlService.ControlURL != "" {
 		activityReporter = NewActivityReporter(
-			cfg.ControlService.BaseURL,
+			cfg.ControlService.ControlURL,
 			cfg.ControlService.APIKey,
 			instanceID,
 		)

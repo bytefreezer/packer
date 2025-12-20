@@ -46,9 +46,9 @@ config:
     spool_path: "/var/spool/bytefreezer-packer"
 
   # Control Service configuration (replaces dev mode and legacy controller)
+  # control_url comes from AWX variable: bytefreezer_control_url
   control_service:
     enabled: true
-    base_url: "http://192.168.86.103:8082"
     # api_key comes from AWX variable: bytefreezer_api_key
     timeout_seconds: 30
 
@@ -106,7 +106,7 @@ config:
   dev: false  # Disabled - using Control Service (see control_service above)
 
   # Health reporting configuration for service registration and monitoring
-  # Note: Uses control_service.base_url for the control service endpoint
+  # Note: Uses control_service.control_url for the control service endpoint
   health_reporting:
     enabled: true
     report_interval: 30
@@ -114,7 +114,7 @@ config:
     register_on_startup: true
 
   # Error tracking configuration for centralized error monitoring
-  # Note: Uses control_service.base_url for the control service endpoint
+  # Note: Uses control_service.control_url for the control service endpoint
   error_tracking:
     enabled: true  # Enable by default to collect errors from packer service
 

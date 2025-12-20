@@ -29,7 +29,7 @@ type BytefreezerConfig struct {
 // ControlServiceConfig represents control service configuration
 type ControlServiceConfig struct {
 	Enabled        bool   `mapstructure:"enabled"`
-	BaseURL        string `mapstructure:"base_url"`
+	ControlURL     string `mapstructure:"control_url"`
 	APIKey         string `mapstructure:"api_key"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
 }
@@ -57,9 +57,9 @@ func NewTenantClient(conf TenantClientConfig) *TenantClient {
 	}
 
 	// Initialize control client if enabled
-	if conf.ControlService.Enabled && conf.ControlService.BaseURL != "" {
+	if conf.ControlService.Enabled && conf.ControlService.ControlURL != "" {
 		tc.controlClient = client.NewClient(client.Config{
-			BaseURL:        conf.ControlService.BaseURL,
+			BaseURL:        conf.ControlService.ControlURL,
 			APIKey:         conf.ControlService.APIKey,
 			TimeoutSeconds: conf.ControlService.TimeoutSeconds,
 		})

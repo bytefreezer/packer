@@ -60,7 +60,7 @@ type Bytefreezer struct {
 
 type ControlServiceConfig struct {
 	Enabled        bool   `mapstructure:"enabled"`
-	BaseURL        string `mapstructure:"base_url"`
+	ControlURL     string `mapstructure:"control_url"`
 	APIKey         string `mapstructure:"api_key"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
 }
@@ -145,7 +145,7 @@ type HealthReportingConfig struct {
 }
 
 // ErrorTrackingConfig represents error tracking configuration
-// Note: Uses control_service.base_url for the control service endpoint
+// Note: Uses control_service.control_url for the control service endpoint
 type ErrorTrackingConfig struct {
 	Enabled bool `mapstructure:"enabled"`
 }
@@ -225,32 +225,32 @@ func (cfg *Config) InitializeComponents() error {
 
 	// Initialize dataset metrics client
 	cfg.DatasetMetricsClient = metrics.NewDatasetMetricsClient(
-		cfg.ControlService.BaseURL,
+		cfg.ControlService.ControlURL,
 		cfg.ControlService.APIKey,
 		cfg.ControlService.TimeoutSeconds,
 		cfg.ControlService.Enabled,
 	)
 	log.Infof("Dataset metrics client initialized (enabled: %v, endpoint: %s)",
-		cfg.ControlService.Enabled, cfg.ControlService.BaseURL)
+		cfg.ControlService.Enabled, cfg.ControlService.ControlURL)
 
 	// Initialize error reporting client if configured
-	if cfg.ErrorTracking.Enabled && cfg.ControlService.BaseURL != "" {
+	if cfg.ErrorTracking.Enabled && cfg.ControlService.ControlURL != "" {
 		cfg.ErrorReporter = errors.NewErrorReporter(
-			cfg.ControlService.BaseURL,
+			cfg.ControlService.ControlURL,
 			cfg.ControlService.APIKey,
 			"packer",
 			true,
 		)
-		log.Infof("Error reporter initialized - reporting to control service at %s", cfg.ControlService.BaseURL)
+		log.Infof("Error reporter initialized - reporting to control service at %s", cfg.ControlService.ControlURL)
 	} else {
-		log.Infof("Error reporting disabled (enabled: %v, control_service: %s)", cfg.ErrorTracking.Enabled, cfg.ControlService.BaseURL)
+		log.Infof("Error reporting disabled (enabled: %v, control_service: %s)", cfg.ErrorTracking.Enabled, cfg.ControlService.ControlURL)
 	}
 
 	// Initialize Control API lock client
-	if cfg.ControlService.BaseURL != "" {
-		log.Infof("Initializing Control API lock client: %s", cfg.ControlService.BaseURL)
+	if cfg.ControlService.ControlURL != "" {
+		log.Infof("Initializing Control API lock client: %s", cfg.ControlService.ControlURL)
 		lockClient, err := storage.NewControlAPILockClient(&storage.ControlAPILockConfig{
-			BaseURL:        cfg.ControlService.BaseURL,
+			BaseURL:        cfg.ControlService.ControlURL,
 			APIKey:         cfg.ControlService.APIKey,
 			TimeoutSeconds: cfg.ControlService.TimeoutSeconds,
 		})
@@ -286,9 +286,9 @@ func (cfg *Config) InitializeComponents() error {
 	}
 
 	// Initialize Control API metadata client
-	if cfg.ControlService.BaseURL != "" {
+	if cfg.ControlService.ControlURL != "" {
 		metadataClient, err := storage.NewControlAPIMetadataClient(&storage.ControlAPIMetadataConfig{
-			BaseURL:        cfg.ControlService.BaseURL,
+			BaseURL:        cfg.ControlService.ControlURL,
 			APIKey:         cfg.ControlService.APIKey,
 			TimeoutSeconds: cfg.ControlService.TimeoutSeconds,
 		})
@@ -311,9 +311,9 @@ func (cfg *Config) InitializeComponents() error {
 	}
 
 	// Initialize Control API accumulation client
-	if cfg.ControlService.BaseURL != "" {
+	if cfg.ControlService.ControlURL != "" {
 		accumulationClient, err := storage.NewAccumulationClient(&storage.AccumulationClientConfig{
-			BaseURL:        cfg.ControlService.BaseURL,
+			BaseURL:        cfg.ControlService.ControlURL,
 			APIKey:         cfg.ControlService.APIKey,
 			TimeoutSeconds: cfg.ControlService.TimeoutSeconds,
 		})
@@ -380,7 +380,7 @@ func (cfg *Config) InitializeComponents() error {
 		},
 		ControlService: tenant.ControlServiceConfig{
 			Enabled:        cfg.ControlService.Enabled,
-			BaseURL:        cfg.ControlService.BaseURL,
+			ControlURL:     cfg.ControlService.ControlURL,
 			APIKey:         cfg.ControlService.APIKey,
 			TimeoutSeconds: cfg.ControlService.TimeoutSeconds,
 		},
