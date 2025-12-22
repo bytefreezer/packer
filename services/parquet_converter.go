@@ -439,8 +439,11 @@ func (pc *ParquetConverter) processS3FileStreamingWithSplit(
 			continue // Skip invalid JSON lines
 		}
 
-		// Add BfTs (ByteFreezer Timestamp) - Unix milliseconds for easy querying
-		record["BfTs"] = time.Now().UnixMilli()
+		// Add BfTs (ByteFreezer Timestamp) if not already present
+		// Proxy now injects BfTs at ingestion time; this is fallback for older data
+		if _, hasBfTs := record["BfTs"]; !hasBfTs {
+			record["BfTs"] = time.Now().UnixMilli()
+		}
 
 		// Track timestamps
 		if ts := pc.extractTimestampFromRecord(record); !ts.IsZero() {
@@ -741,8 +744,11 @@ func (pc *ParquetConverter) convertToParquet(inputPath, outputPath string, schem
 			continue
 		}
 
-		// Add BfTs (ByteFreezer Timestamp) - Unix milliseconds for easy querying
-		jsonObj["BfTs"] = time.Now().UnixMilli()
+		// Add BfTs (ByteFreezer Timestamp) if not already present
+		// Proxy now injects BfTs at ingestion time; this is fallback for older data
+		if _, hasBfTs := jsonObj["BfTs"]; !hasBfTs {
+			jsonObj["BfTs"] = time.Now().UnixMilli()
+		}
 
 		records = append(records, jsonObj)
 
