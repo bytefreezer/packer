@@ -439,12 +439,6 @@ func (pc *ParquetConverter) processS3FileStreamingWithSplit(
 			continue // Skip invalid JSON lines
 		}
 
-		// Add BfTs (ByteFreezer Timestamp) if not already present
-		// Proxy now injects BfTs at ingestion time; this is fallback for older data
-		if _, hasBfTs := record["BfTs"]; !hasBfTs {
-			record["BfTs"] = time.Now().UnixMilli()
-		}
-
 		// Track timestamps
 		if ts := pc.extractTimestampFromRecord(record); !ts.IsZero() {
 			if !timestamps.HasTimestamp {
@@ -566,15 +560,8 @@ func (pc *ParquetConverter) analyzeNDJSONSchema(filePath string) (*arrow.Schema,
 		return nil, 0, fmt.Errorf("error reading file: %w", err)
 	}
 
-	// Build Arrow schema with BfTs as first field
-	fields := make([]arrow.Field, 0, len(fieldTypes)+1)
-
-	// Add BfTs (ByteFreezer Timestamp) as first field - Unix milliseconds
-	fields = append(fields, arrow.Field{
-		Name:     "BfTs",
-		Type:     &arrow.Int64Type{},
-		Nullable: false,
-	})
+	// Build Arrow schema from discovered field types
+	fields := make([]arrow.Field, 0, len(fieldTypes))
 
 	for name, dataType := range fieldTypes {
 		fields = append(fields, arrow.Field{
@@ -742,12 +729,6 @@ func (pc *ParquetConverter) convertToParquet(inputPath, outputPath string, schem
 		if err := sonic.Unmarshal([]byte(line), &jsonObj); err != nil {
 			log.Warnf("Skipping invalid JSON line: %s", err)
 			continue
-		}
-
-		// Add BfTs (ByteFreezer Timestamp) if not already present
-		// Proxy now injects BfTs at ingestion time; this is fallback for older data
-		if _, hasBfTs := jsonObj["BfTs"]; !hasBfTs {
-			jsonObj["BfTs"] = time.Now().UnixMilli()
 		}
 
 		records = append(records, jsonObj)
@@ -1020,15 +1001,6 @@ func (pc *ParquetConverter) analyzeSchemaFromS3Files(ctx context.Context, files 
 	if err != nil {
 		return nil, fmt.Errorf("failed to analyze schema from %s: %w", files[0].Key, err)
 	}
-
-	// Prepend BfTs (ByteFreezer Timestamp) as first field - Unix milliseconds
-	bfTsField := arrow.Field{
-		Name:     "BfTs",
-		Type:     &arrow.Int64Type{},
-		Nullable: false,
-	}
-	newFields := append([]arrow.Field{bfTsField}, schema.Fields()...)
-	schema = arrow.NewSchema(newFields, nil)
 
 	return schema, nil
 }
