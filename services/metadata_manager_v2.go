@@ -70,6 +70,11 @@ func (mm *MetadataManagerV2) UpdateMetadataAfterUpload(ctx context.Context, tena
 		return fmt.Errorf("failed to store file metadata: %w", err)
 	}
 
+	// Step 2b: Extract and track fields for schema evolution
+	if err := mm.trackFieldsFromSchema(ctx, tenant.ID, dataset.ID, newFileMetadata.SchemaJSON); err != nil {
+		log.Warnf("Failed to track fields for schema evolution: %v", err) // Non-fatal
+	}
+
 	// Step 3: Determine metadata level (root or leaf)
 	metadataLevel := "leaf" // Default to leaf-level
 	if dataset.ProcessingConfig != nil && dataset.ProcessingConfig.MetadataLevel != "" {
@@ -436,6 +441,37 @@ func (mm *MetadataManagerV2) GetStats(ctx context.Context) (map[string]interface
 			"distributed-locking",
 		},
 	}, nil
+}
+
+// trackFieldsFromSchema extracts fields from parquet schema and tracks them for schema evolution
+func (mm *MetadataManagerV2) trackFieldsFromSchema(ctx context.Context, tenantID, datasetID, schemaJSON string) error {
+	if schemaJSON == "" {
+		return nil
+	}
+
+	// Parse schema JSON
+	var schema storage.ParquetSchema
+	if err := sonic.Unmarshal([]byte(schemaJSON), &schema); err != nil {
+		return fmt.Errorf("failed to parse schema JSON: %w", err)
+	}
+
+	// Extract field names and types
+	fields := make(map[string]string)
+	for _, field := range schema.Fields {
+		fields[field.Name] = field.Type
+	}
+
+	if len(fields) == 0 {
+		return nil
+	}
+
+	// Send field tracking to control service
+	if err := mm.metadataClient.UpsertFieldTrackingBatch(ctx, tenantID, datasetID, fields); err != nil {
+		return fmt.Errorf("failed to upsert field tracking: %w", err)
+	}
+
+	log.Debugf("Tracked %d fields for %s/%s schema evolution", len(fields), tenantID, datasetID)
+	return nil
 }
 
 // calculateSchemaHash calculates SHA256 hash for schema change detection

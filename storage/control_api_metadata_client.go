@@ -364,6 +364,34 @@ func (c *ControlAPIMetadataClient) CleanupExpiredMetadata(ctx context.Context) (
 	return result.FilesDeleted, result.StatusDeleted, nil
 }
 
+// UpsertFieldTrackingBatch updates or creates field tracking entries for schema evolution
+// fields is a map of field_name -> field_type
+func (c *ControlAPIMetadataClient) UpsertFieldTrackingBatch(ctx context.Context, tenantID, datasetID string, fields map[string]string) error {
+	if len(fields) == 0 {
+		return nil
+	}
+
+	body := map[string]interface{}{
+		"tenant_id":  tenantID,
+		"dataset_id": datasetID,
+		"fields":     fields,
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/api/v1/packer/field-tracking/batch", body)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to upsert field tracking: status %d, body: %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	log.Debugf("Upserted %d fields for %s/%s", len(fields), tenantID, datasetID)
+	return nil
+}
+
 // Close closes any resources (no-op for HTTP client)
 func (c *ControlAPIMetadataClient) Close() error {
 	// HTTP client doesn't need explicit closing

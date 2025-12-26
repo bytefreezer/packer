@@ -37,6 +37,10 @@ type MetadataClient interface {
 	// CleanupExpiredMetadata removes metadata records that have exceeded their TTL
 	CleanupExpiredMetadata(ctx context.Context) (int, int, error)
 
+	// UpsertFieldTrackingBatch updates or creates field tracking entries for schema evolution
+	// fields is a map of field_name -> field_type
+	UpsertFieldTrackingBatch(ctx context.Context, tenantID, datasetID string, fields map[string]string) error
+
 	// Close closes any resources
 	Close() error
 }

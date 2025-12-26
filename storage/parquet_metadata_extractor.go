@@ -344,6 +344,7 @@ func (pme *ParquetMetadataExtractor) ValidateSchemaCompatibility(schemas []strin
 
 // MergeSchemas merges multiple schemas into a single compatible schema
 // This creates a union schema that includes all fields from all input schemas
+// Duplicates are detected by normalizing field names (lowercase, underscores)
 func (pme *ParquetMetadataExtractor) MergeSchemas(schemas []string) (*ParquetSchema, error) {
 	if len(schemas) == 0 {
 		return nil, fmt.Errorf("no schemas to merge")
@@ -356,18 +357,34 @@ func (pme *ParquetMetadataExtractor) MergeSchemas(schemas []string) (*ParquetSch
 	}
 
 	if len(schemas) == 1 {
+		// Still deduplicate single schema
+		baseSchema.Fields = pme.deduplicateFields(baseSchema.Fields)
 		return &baseSchema, nil
 	}
 
-	// Create a map of field names to fields for efficient lookup
+	// Create maps for deduplication:
+	// - mergedFields: exact field name -> field
+	// - normalizedFields: normalized name -> original field name (for duplicate detection)
 	mergedFields := make(map[string]*ParquetField)
-	for i := range baseSchema.Fields {
-		mergedFields[baseSchema.Fields[i].Name] = &baseSchema.Fields[i]
-	}
+	normalizedFields := make(map[string]string) // normalized -> original name
 
 	// Track field order - use first occurrence order
 	fieldOrder := make([]string, 0, len(baseSchema.Fields))
-	for _, field := range baseSchema.Fields {
+
+	// Process base schema fields
+	for i := range baseSchema.Fields {
+		field := &baseSchema.Fields[i]
+		normalized := pme.normalizeFieldName(field.Name)
+
+		if existingName, exists := normalizedFields[normalized]; exists {
+			// Duplicate detected - skip this field
+			log.Warnf("Skipping duplicate field %s (normalized: %s, already have: %s)",
+				field.Name, normalized, existingName)
+			continue
+		}
+
+		mergedFields[field.Name] = field
+		normalizedFields[normalized] = field.Name
 		fieldOrder = append(fieldOrder, field.Name)
 	}
 
@@ -381,21 +398,32 @@ func (pme *ParquetMetadataExtractor) MergeSchemas(schemas []string) (*ParquetSch
 
 		// Process each field in current schema
 		for _, currentField := range currentSchema.Fields {
-			if existingField, exists := mergedFields[currentField.Name]; exists {
-				// Field exists - check type compatibility
-				if existingField.Type != currentField.Type {
-					log.Warnf("Field %s has different types across schemas: %s vs %s (using %s)",
-						currentField.Name, existingField.Type, currentField.Type, existingField.Type)
-					// Keep the first type encountered
+			normalized := pme.normalizeFieldName(currentField.Name)
+
+			// Check for duplicate by normalized name
+			if existingName, exists := normalizedFields[normalized]; exists {
+				// Duplicate detected
+				if existingName != currentField.Name {
+					log.Debugf("Skipping duplicate field %s (normalized: %s, already have: %s)",
+						currentField.Name, normalized, existingName)
 				}
-			} else {
-				// New field - add it to merged schema
-				log.Debugf("Adding new field %s from schema %d (type: %s)",
-					currentField.Name, i+1, currentField.Type)
-				newField := currentField
-				mergedFields[currentField.Name] = &newField
-				fieldOrder = append(fieldOrder, currentField.Name)
+				// Check type compatibility with existing field
+				if existingField, ok := mergedFields[existingName]; ok {
+					if existingField.Type != currentField.Type {
+						log.Warnf("Field %s has different types: %s vs %s (using %s)",
+							existingName, existingField.Type, currentField.Type, existingField.Type)
+					}
+				}
+				continue
 			}
+
+			// New field - add it to merged schema
+			log.Debugf("Adding new field %s from schema %d (type: %s)",
+				currentField.Name, i+1, currentField.Type)
+			newField := currentField
+			mergedFields[currentField.Name] = &newField
+			normalizedFields[normalized] = currentField.Name
+			fieldOrder = append(fieldOrder, currentField.Name)
 		}
 	}
 
@@ -422,6 +450,36 @@ func (pme *ParquetMetadataExtractor) MergeSchemas(schemas []string) (*ParquetSch
 	log.Infof("Merged %d schemas into unified schema with %d fields", len(schemas), len(finalFields))
 
 	return mergedSchema, nil
+}
+
+// normalizeFieldName normalizes field names for duplicate detection
+// Converts to lowercase and replaces hyphens with underscores
+func (pme *ParquetMetadataExtractor) normalizeFieldName(name string) string {
+	normalized := strings.ToLower(name)
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	// Remove trailing numbers that might indicate duplicates (e.g., BfTs_1 -> bfts)
+	for strings.HasSuffix(normalized, "_1") || strings.HasSuffix(normalized, "_2") {
+		normalized = normalized[:len(normalized)-2]
+	}
+	return normalized
+}
+
+// deduplicateFields removes duplicate fields from a field list
+func (pme *ParquetMetadataExtractor) deduplicateFields(fields []ParquetField) []ParquetField {
+	seen := make(map[string]bool)
+	result := make([]ParquetField, 0, len(fields))
+
+	for _, field := range fields {
+		normalized := pme.normalizeFieldName(field.Name)
+		if !seen[normalized] {
+			seen[normalized] = true
+			result = append(result, field)
+		} else {
+			log.Debugf("Removed duplicate field: %s (normalized: %s)", field.Name, normalized)
+		}
+	}
+
+	return result
 }
 
 // extractSchemaFromParquetFile extracts the actual schema from a Parquet file
