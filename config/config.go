@@ -121,9 +121,13 @@ type Server struct {
 }
 
 type Otel struct {
-	Enabled     bool   `mapstructure:"enabled"`
-	MetricsPort int    `mapstructure:"metrics_port"`
-	MetricsHost string `mapstructure:"metrics_host"`
+	Enabled             bool   `mapstructure:"enabled"`
+	Mode                string `mapstructure:"mode"` // "prometheus" (pull), "otlp_http" (push to Prometheus), "otlp_grpc" (push to collector)
+	OTLPEndpoint        string `mapstructure:"otlp_endpoint"`
+	PushIntervalSeconds int    `mapstructure:"push_interval_seconds"`
+	MetricsHost         string `mapstructure:"metrics_host"`
+	MetricsPort         int    `mapstructure:"metrics_port"`
+	ServiceName         string `mapstructure:"service_name"`
 }
 
 type SOCAlert struct {
