@@ -43,13 +43,13 @@ type AccumulationState struct {
 	FlushCount       int        `json:"flush_count"`
 
 	// Computed fields from Control API
-	ThresholdBytes   int64   `json:"threshold_bytes,omitempty"`
-	ThresholdSeconds int     `json:"threshold_seconds,omitempty"`
-	CompressionRatio float64 `json:"compression_ratio,omitempty"`
-	ProgressPercent  float64 `json:"progress_percent,omitempty"`
-	TimeUntilFlush   int     `json:"time_until_flush_seconds,omitempty"`
-	ShouldFlush      bool    `json:"should_flush,omitempty"`
-	FlushReason      string  `json:"flush_reason,omitempty"`
+	ThresholdBytes    int64   `json:"threshold_bytes,omitempty"`
+	ThresholdSeconds  int     `json:"threshold_seconds,omitempty"`
+	CompressionRatio  float64 `json:"compression_ratio,omitempty"`
+	ProgressPercent   float64 `json:"progress_percent,omitempty"`
+	TimeUntilFlush    int     `json:"time_until_flush_seconds,omitempty"`
+	ShouldFlush       bool    `json:"should_flush,omitempty"`
+	FlushReason       string  `json:"flush_reason,omitempty"`
 	EstimatedOutputMB float64 `json:"estimated_output_mb,omitempty"`
 }
 

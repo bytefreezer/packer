@@ -60,7 +60,7 @@ type ParquetConversionOptions struct {
 
 // MultiFileResult contains results for all output files when splitting occurs
 type MultiFileResult struct {
-	Files            []string           // All output file paths
+	Files            []string            // All output file paths
 	Results          []*ConversionResult // Result per file
 	TotalRecords     int64
 	TotalInputSize   int64
@@ -70,15 +70,15 @@ type MultiFileResult struct {
 
 // parquetWriterState holds state for a single parquet output file
 type parquetWriterState struct {
-	s3Writer    *S3Writer
-	writer      *pqarrow.FileWriter
-	partNumber  int
-	baseKey     string
-	finalKey    string
-	uploadKey   string
-	records     int64
-	timestamps  FileTimestamps
-	startTime   time.Time
+	s3Writer   *S3Writer
+	writer     *pqarrow.FileWriter
+	partNumber int
+	baseKey    string
+	finalKey   string
+	uploadKey  string
+	records    int64
+	timestamps FileTimestamps
+	startTime  time.Time
 }
 
 func NewParquetConverter() *ParquetConverter {

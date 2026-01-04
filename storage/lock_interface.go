@@ -48,4 +48,3 @@ type HeartbeatLockClient interface {
 	// Used on startup to clean up abandoned locks from previous runs of this instance
 	CleanupInstanceLocks(ctx context.Context, instanceID string) error
 }
-
