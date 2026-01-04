@@ -6,7 +6,7 @@ on:
     tags: [ 'v*' ]
 
 env:
-  GO_VERSION: '1.24.4'
+  GO_VERSION: '1.24.11'
   GOPRIVATE: github.com/bytefreezer/*
   BINARY_NAME: 'bytefreezer-packer'
 
@@ -121,11 +121,26 @@ jobs:
 
   docker:
     name: Build Docker Image
-    needs: test
+    needs: build
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
+
+    - name: Download Linux binary artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ env.BINARY_NAME }}-linux-amd64
+        path: ./artifacts
+
+    - name: Extract binary from tarball
+      run: |
+        cd artifacts
+        tar -xzf *.tar.gz
+        mv ${{ env.BINARY_NAME }}-linux-amd64 ${{ env.BINARY_NAME }}
+        chmod +x ${{ env.BINARY_NAME }}
+        mv ${{ env.BINARY_NAME }} ../
+        cd ..
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -144,22 +159,34 @@ jobs:
         images: ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}
         tags: |
           type=ref,event=branch
+          type=sha,prefix=sha-
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
           type=semver,pattern={{major}}
-          type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+
+    - name: Debug metadata outputs
+      run: |
+        echo "Tags: ${{ steps.meta.outputs.tags }}"
+        echo "Labels: ${{ steps.meta.outputs.labels }}"
+
+    - name: Generate fallback tag
+      id: fallback
+      run: |
+        SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+        FALLBACK_TAG="ghcr.io/${{ github.repository_owner }}/${{ env.BINARY_NAME }}:sha-${SHORT_SHA}"
+        echo "tag=${FALLBACK_TAG}" >> $GITHUB_OUTPUT
+        echo "Fallback tag: ${FALLBACK_TAG}"
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
+        file: Dockerfile.release
         platforms: linux/amd64
         push: true
-        tags: ${{ steps.meta.outputs.tags }}
+        tags: ${{ steps.meta.outputs.tags || steps.fallback.outputs.tag }}
         labels: ${{ steps.meta.outputs.labels }}
-        build-args: |
-          VERSION=${{ github.ref_name }}
-          BUILD_TIME=${{ github.event.head_commit.timestamp }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 

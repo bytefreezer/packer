@@ -1,0 +1,40 @@
+# Dockerfile for release builds using pre-built binary
+FROM alpine:3.19
+
+RUN apk add --no-cache \
+    ca-certificates \
+    tzdata \
+    curl \
+    && rm -rf /var/cache/apk/*
+
+RUN addgroup -g 1000 -S bytefreezer && \
+    adduser -u 1000 -S bytefreezer -G bytefreezer -s /bin/sh -D
+
+RUN mkdir -p /etc/bytefreezer-packer \
+             /var/log/bytefreezer-packer && \
+    chown -R bytefreezer:bytefreezer /etc/bytefreezer-packer \
+                                    /var/log/bytefreezer-packer
+
+COPY bytefreezer-packer /bytefreezer-packer
+RUN chmod +x /bytefreezer-packer
+
+COPY --chown=bytefreezer:bytefreezer config.yaml /etc/bytefreezer-packer/config.yaml
+
+USER bytefreezer
+
+ENV CONFIG_FILE=/etc/bytefreezer-packer/config.yaml
+
+EXPOSE 8083/tcp 9093/tcp
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8083/api/v1/health || exit 1
+
+WORKDIR /
+
+CMD ["/bytefreezer-packer", "--config", "/etc/bytefreezer-packer/config.yaml"]
+
+LABEL maintainer="ByteFreezer Team" \
+      org.opencontainers.image.title="ByteFreezer Packer" \
+      org.opencontainers.image.description="Parquet file packer for ByteFreezer platform" \
+      org.opencontainers.image.vendor="ByteFreezer" \
+      org.opencontainers.image.source="https://github.com/bytefreezer/bytefreezer"
