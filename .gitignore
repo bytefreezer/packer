@@ -39,4 +39,4 @@ spool/
 *.ndjson
 
 # Ansible build artifacts
-ansible/playbooks/dist/
+#ansible/playbooks/dist/
