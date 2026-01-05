@@ -36,3 +36,4 @@ CLAUDE.md
 distribution/docker/bytefreezer-cachecache/
 spool/
 *.ndjson
+ansible/playbooks/dist/
