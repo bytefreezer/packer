@@ -33,7 +33,10 @@ CLAUDE.md
 #ignore DS_STORE
 *.DS_Store
 
-distribution/docker/bytefreezer-cachecache/
+distribution/docker/bytefreezer-cache
+cache/
 spool/
 *.ndjson
+
+# Ansible build artifacts
 ansible/playbooks/dist/
