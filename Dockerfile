@@ -84,8 +84,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 # Set working directory
 WORKDIR /
 
-# Default command
-CMD ["/bytefreezer-packer", "--config", "/etc/bytefreezer-packer/config.yaml"]
+# Entrypoint and default arguments
+ENTRYPOINT ["/bytefreezer-packer"]
+CMD ["--config", "/etc/bytefreezer-packer/config.yaml"]
 
 # Metadata labels following OCI standards
 ARG VERSION=unknown
