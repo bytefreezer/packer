@@ -101,6 +101,7 @@ func NewS3SourceClient(s3Config S3SourceConfig) (*S3SourceClient, error) {
 		s3Client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(endpoint)
 			o.UsePathStyle = true                              // Required for MinIO and some custom S3 implementations
+			o.DisableS3ExpressSessionAuth = aws.Bool(true)     // Disable S3 Express for MinIO compatibility
 			o.DisableLogOutputChecksumValidationSkipped = true // Suppress MinIO checksum warnings
 		})
 	} else {
@@ -126,9 +127,11 @@ func (sc *S3SourceClient) TestConnection() error {
 
 	log.Debugf("Testing S3 source connection to bucket: %s", sc.bucket)
 
-	// Try to head the bucket to verify access
-	_, err := sc.s3Client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: aws.String(sc.bucket),
+	// Use ListObjectsV2 with MaxKeys=1 instead of HeadBucket for better MinIO compatibility
+	// HeadBucket can fail with certain S3-compatible storage systems
+	_, err := sc.s3Client.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+		Bucket:  aws.String(sc.bucket),
+		MaxKeys: aws.Int32(1),
 	})
 
 	if err != nil {
