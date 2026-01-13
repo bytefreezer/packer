@@ -25,10 +25,6 @@ type Services struct {
 	TenantMetrics *TenantMetrics
 }
 
-type HealthService interface {
-	GetHealth() bool
-}
-
 func NewServices(conf *config.Config) *Services {
 	meter := otel.Meter(METER)
 

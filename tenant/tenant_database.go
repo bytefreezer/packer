@@ -44,27 +44,15 @@ func (tdb *TenantDatabase) PopulateDatabase(client *TenantClient) error {
 			// Clear existing tenants
 			tdb.tenants = make(map[string]domain.Tenant)
 
-			// Filter out disabled tenants if failure tracker is available
-			enabledTenants := tdb.filterEnabledTenants(tenants)
-
-			// Add enabled tenants only
-			for _, tenant := range enabledTenants {
+			// Add tenants
+			for _, tenant := range tenants {
 				tdb.tenants[tenant.ID] = tenant
 			}
 
 			tdb.lastSync = time.Now()
 			tdb.isHealthy = true
 
-			originalCount := len(tenants)
-			enabledCount := len(enabledTenants)
-
-			if originalCount != enabledCount {
-				log.Infof("Successfully populated tenant database with %d enabled tenants (%d disabled)",
-					enabledCount, originalCount-enabledCount)
-			} else {
-				log.Infof("Successfully populated tenant database with %d tenants", enabledCount)
-			}
-
+			log.Infof("Successfully populated tenant database with %d tenants", len(tenants))
 			return nil
 		}
 
@@ -105,12 +93,9 @@ func (tdb *TenantDatabase) UpdateDatabase(client *TenantClient) error {
 	tdb.mutex.Lock()
 	defer tdb.mutex.Unlock()
 
-	// Filter out disabled tenants if failure tracker is available
-	enabledTenants := tdb.filterEnabledTenants(tenants)
-
-	// Update tenants map with enabled tenants only
+	// Update tenants map
 	newTenants := make(map[string]domain.Tenant)
-	for _, tenant := range enabledTenants {
+	for _, tenant := range tenants {
 		newTenants[tenant.ID] = tenant
 	}
 
@@ -118,16 +103,7 @@ func (tdb *TenantDatabase) UpdateDatabase(client *TenantClient) error {
 	tdb.lastSync = time.Now()
 	tdb.isHealthy = true
 
-	originalCount := len(tenants)
-	enabledCount := len(enabledTenants)
-
-	if originalCount != enabledCount {
-		log.Debugf("Successfully updated tenant database with %d enabled tenants (%d disabled)",
-			enabledCount, originalCount-enabledCount)
-	} else {
-		log.Debugf("Successfully updated tenant database with %d tenants", enabledCount)
-	}
-
+	log.Debugf("Successfully updated tenant database with %d tenants", len(tenants))
 	return nil
 }
 
@@ -186,10 +162,4 @@ func (tdb *TenantDatabase) setHealthy(healthy bool) {
 	defer tdb.mutex.Unlock()
 
 	tdb.isHealthy = healthy
-}
-
-// filterEnabledTenants filters out disabled tenants using the failure tracker
-func (tdb *TenantDatabase) filterEnabledTenants(tenants []domain.Tenant) []domain.Tenant {
-	// No failure tracking in packer, return all tenants
-	return tenants
 }

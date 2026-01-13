@@ -558,9 +558,6 @@ func (tp *TenantProcessor) processDatasetInternal(ctx context.Context, tenant *d
 			tp.metrics.RecordProcessingError(ctx, tenant.ID, tenant.Name, "merge_files")
 		}
 
-		// Mark files as failed if tracker is available
-		tp.markFilesAsFailed(ctx, files, tenant.ID, dataset.ID, err)
-
 		return result
 	}
 
@@ -1147,11 +1144,6 @@ func (tp *TenantProcessor) CleanupCache() error {
 	}
 
 	return nil
-}
-
-// markFilesAsFailed marks files as failed in the processed file tracker
-func (tp *TenantProcessor) markFilesAsFailed(ctx context.Context, files []storage.S3Object, tenantID, datasetID string, processingError error) {
-	// ProcessedFileTracker has been removed - no-op
 }
 
 // ProcessSingleDataset processes a specific dataset for a tenant
