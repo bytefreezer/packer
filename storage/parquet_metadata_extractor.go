@@ -152,56 +152,6 @@ func (pme *ParquetMetadataExtractor) ExtractFileMetadata(ctx context.Context, te
 	return metadata, nil
 }
 
-// ExtractFileMetadataWithParquetReader extracts metadata using actual Parquet reading
-// TODO: Implement this with a proper Parquet library
-func (pme *ParquetMetadataExtractor) ExtractFileMetadataWithParquetReader(ctx context.Context, tenantID, datasetID string, s3Dest *domain.S3Destination, filePath, instanceID string) (*ParquetFileMetadata, error) {
-	// This would be the production implementation using a proper Parquet library
-	// Example with segmentio/parquet-go:
-
-	/*
-		// Get S3 client
-		s3Client, err := pme.s3DestinationManager.GetS3Client(tenantID, datasetID, s3Dest)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get S3 client: %w", err)
-		}
-
-		// Open the Parquet file
-		reader, err := s3Client.GetObjectReader(ctx, filePath)
-		if err != nil {
-			return nil, fmt.Errorf("failed to open Parquet file: %w", err)
-		}
-		defer reader.Close()
-
-		// Create Parquet reader
-		parquetReader, err := parquet.NewReader(reader)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create Parquet reader: %w", err)
-		}
-
-		// Extract schema
-		schema := parquetReader.Schema()
-
-		// Extract row count
-		numRows := parquetReader.NumRows()
-
-		// Extract column statistics
-		columnStats := make([]ParquetColumnStats, 0)
-		for _, field := range schema.Fields() {
-			stats := ParquetColumnStats{
-				ColumnName: field.Name(),
-				DataType:   field.Type().String(),
-				NullCount:  0, // Would extract from Parquet metadata
-			}
-			columnStats = append(columnStats, stats)
-		}
-
-		// Continue with rest of implementation...
-	*/
-
-	// For now, fall back to the simplified version
-	return pme.ExtractFileMetadata(ctx, tenantID, datasetID, s3Dest, filePath, instanceID)
-}
-
 // extractPartitionPath extracts the partition path from a file path
 func (pme *ParquetMetadataExtractor) extractPartitionPath(filePath string) string {
 	// Extract partition from path like: tenant1/dataset1/year=2024/month=01/day=15/file.parquet

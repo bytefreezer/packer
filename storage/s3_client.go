@@ -235,38 +235,6 @@ func (sc *S3Client) ObjectExists(ctx context.Context, bucketName, key string) (b
 	return true, nil
 }
 
-// DeleteObjects deletes multiple objects from S3
-func (sc *S3Client) DeleteObjects(ctx context.Context, keys []string) error {
-	if len(keys) == 0 {
-		return nil
-	}
-
-	// S3 batch delete supports up to 1000 objects
-	batchSize := 1000
-	for i := 0; i < len(keys); i += batchSize {
-		end := i + batchSize
-		if end > len(keys) {
-			end = len(keys)
-		}
-
-		batch := keys[i:end]
-		objects := make([]types.ObjectIdentifier, len(batch))
-		for j, key := range batch {
-			objects[j] = types.ObjectIdentifier{Key: aws.String(key)}
-		}
-
-		_, err := sc.s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
-			Bucket: aws.String(sc.bucket),
-			Delete: &types.Delete{Objects: objects},
-		})
-		if err != nil {
-			return fmt.Errorf("failed to delete batch of objects: %w", err)
-		}
-	}
-
-	return nil
-}
-
 // GetObjectInfo retrieves metadata information about an S3 object
 func (sc *S3Client) GetObjectInfo(ctx context.Context, key string) (*S3ObjectInfo, error) {
 	resp, err := sc.s3Client.HeadObject(ctx, &s3.HeadObjectInput{

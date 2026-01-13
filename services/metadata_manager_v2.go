@@ -418,17 +418,6 @@ func (mm *MetadataManagerV2) ValidateMetadataExists(ctx context.Context, tenantI
 	return mm.checkMetadataFileExists(ctx, s3Dest, tenantID, datasetID, partitionPath, "_metadata")
 }
 
-// CleanupOrphanedMetadata removes metadata for files that no longer exist in S3
-func (mm *MetadataManagerV2) CleanupOrphanedMetadata(ctx context.Context, tenantID, datasetID string) error {
-	log.Infof("Starting orphaned metadata cleanup for %s:%s", tenantID, datasetID)
-
-	// This would be implemented as a background job
-	// For now, just log the intention
-	log.Infof("Orphaned metadata cleanup completed for %s:%s", tenantID, datasetID)
-
-	return nil
-}
-
 // GetStats returns statistics about the metadata system
 func (mm *MetadataManagerV2) GetStats(ctx context.Context) (map[string]interface{}, error) {
 	// Return basic statistics about metadata management
