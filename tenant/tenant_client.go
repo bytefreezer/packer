@@ -6,8 +6,6 @@ package tenant
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"time"
 
 	client "github.com/bytefreezer/goodies/control-client"
 	"github.com/bytefreezer/goodies/log"
@@ -44,16 +42,12 @@ type TenantClientConfig struct {
 
 type TenantClient struct {
 	config        TenantClientConfig
-	httpClient    *http.Client
 	controlClient *client.Client
 }
 
 func NewTenantClient(conf TenantClientConfig) *TenantClient {
 	tc := &TenantClient{
 		config: conf,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-		},
 	}
 
 	// Initialize control client if enabled

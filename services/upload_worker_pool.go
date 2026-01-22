@@ -566,69 +566,6 @@ func (w *UploadWorker) handleJobResult(ctx context.Context, job *UploadJob, resu
 		// Max attempts reached, send failure result (only for finite retry jobs)
 		log.Errorf("Job %s failed permanently after %d attempts", job.ID, job.Attempts)
 
-		// TODO: Implement failure tracking via Control API
-		// Increment tenant failure counter
-		/*if w.pool.config.TenantFailureTracker != nil {
-			thresholdReached, failureCount, err := w.pool.config.TenantFailureTracker.IncrementFailureCount(
-				ctx, job.TenantID, result.Error.Error(),
-			)
-			if err != nil {
-				log.Errorf("Failed to increment failure counter for tenant %s: %v", job.TenantID, err)
-			} else {
-				log.Infof("Incremented failure count for tenant %s to %d (threshold reached: %v)",
-					job.TenantID, failureCount, thresholdReached)
-
-				// Record tenant failure metrics
-				if w.pool.metrics != nil {
-					if job.Dataset != nil {
-						w.pool.metrics.RecordDatasetFailure(ctx, job.TenantID, job.Tenant.Name, job.DatasetID, job.Dataset.Name, int(failureCount))
-					} else {
-						w.pool.metrics.RecordTenantFailure(ctx, job.TenantID, job.Tenant.Name, int(failureCount))
-					}
-				}
-
-				// Disable tenant if threshold reached
-				if thresholdReached {
-					log.Warnf("Tenant %s has reached failure threshold (%d), attempting to disable",
-						job.TenantID, failureCount)
-
-					disableReason := fmt.Sprintf("Automatic disable after %d consecutive upload failures. Last error: %v",
-						failureCount, result.Error)
-
-					if disableErr := w.pool.config.TenantClient.DisableTenant(job.TenantID, disableReason); disableErr != nil {
-						log.Errorf("Failed to disable tenant %s: %v", job.TenantID, disableErr)
-
-						// Send critical alert about disable failure
-						if w.pool.config.SOCAlertClient != nil {
-							alertErr := w.pool.config.SOCAlertClient.SendCriticalAlert(
-								"Failed to Disable Problematic Tenant",
-								fmt.Sprintf("Tenant %s reached failure threshold but could not be disabled", job.TenantID),
-								fmt.Sprintf("Disable error: %v, Original failure: %v", disableErr, result.Error),
-							)
-							if alertErr != nil {
-								log.Errorf("Failed to send critical disable failure alert: %v", alertErr)
-							}
-						}
-					} else {
-						log.Infof("Successfully disabled tenant %s via controller", job.TenantID)
-
-						// Send info alert about successful disable
-						if w.pool.config.SOCAlertClient != nil {
-							alertErr := w.pool.config.SOCAlertClient.SendAlert(
-								"INFO",
-								"Tenant Automatically Disabled",
-								fmt.Sprintf("Tenant %s has been automatically disabled due to repeated failures", job.TenantID),
-								fmt.Sprintf("Failure count: %d, Reason: %s", failureCount, disableReason),
-							)
-							if alertErr != nil {
-								log.Errorf("Failed to send tenant disable info alert: %v", alertErr)
-							}
-						}
-					}
-				}
-			}
-		}*/
-
 		// Send critical SOC alert for permanent failures
 		if w.pool.config.SOCAlertClient != nil {
 			alertErr := w.pool.config.SOCAlertClient.SendTenantUploadFailureAlert(
