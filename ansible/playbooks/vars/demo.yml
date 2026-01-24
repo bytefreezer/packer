@@ -25,7 +25,11 @@ paths:
 
 # Log rotation settings
 logrotate:
+  # Logs rotate when reaching 100MB OR daily, whichever comes first
+  # Total logs limited to ~1GB (rotate_count * size + current file)
   rotate_count: 7
+  size: "100M"
+  maxsize: "1G"
 
 # Application configuration
 config:

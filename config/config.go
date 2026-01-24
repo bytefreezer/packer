@@ -63,6 +63,7 @@ type ControlServiceConfig struct {
 	ControlURL     string `mapstructure:"control_url"`
 	APIKey         string `mapstructure:"api_key"`
 	TimeoutSeconds int    `mapstructure:"timeout_seconds"`
+	AccountID      string `mapstructure:"account_id"` // Optional: for on-prem installs, identifies owning account
 }
 
 type S3Config struct {
