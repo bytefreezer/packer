@@ -484,6 +484,7 @@ func buildHealthConfiguration(conf *config.Config, instanceAPI string) map[strin
 	configMap := map[string]interface{}{
 		"service_type":    "bytefreezer-packer",
 		"version":         conf.App.Version,
+		"git_commit":      gitCommit,
 		"instance_api":    instanceAPI,
 		"report_interval": conf.HealthReporting.ReportInterval,
 		"timeout":         fmt.Sprintf("%ds", conf.HealthReporting.TimeoutSeconds),
