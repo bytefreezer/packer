@@ -6,11 +6,10 @@ package services
 import (
 	"bytes"
 	"fmt"
-	"github.com/bytedance/sonic"
 	"net/http"
-	"os"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/bytefreezer/goodies/log"
 )
 
@@ -64,16 +63,10 @@ type HealthReportResponse struct {
 
 // NewHealthReportingService creates a new health reporting service
 func NewHealthReportingService(controlURL, serviceType, instanceAPI, apiKey string, reportInterval, timeout time.Duration, config map[string]interface{}) *HealthReportingService {
-	// Get hostname for instance ID
-	hostname, err := os.Hostname()
-	if err != nil {
-		hostname = "unknown"
-	}
-
 	return &HealthReportingService{
 		controlURL:     controlURL,
 		serviceType:    serviceType,
-		instanceID:     hostname,
+		instanceID:     instanceAPI,
 		instanceAPI:    instanceAPI,
 		reportInterval: reportInterval,
 		timeout:        timeout,
