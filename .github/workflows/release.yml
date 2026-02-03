@@ -102,7 +102,7 @@ jobs:
         BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         
         go build \
-          -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" \
+          -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GITHUB_SHA}" \
           -o ${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.arch }} .
 
     - name: Create tarball
@@ -147,7 +147,7 @@ jobs:
           VERSION="main-${GITHUB_SHA:0:8}"
         fi
         BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        go build -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" -o ${{ env.BINARY_NAME }} .
+        go build -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GITHUB_SHA}" -o ${{ env.BINARY_NAME }} .
 
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
@@ -223,7 +223,7 @@ jobs:
         VERSION=${GITHUB_REF_NAME#v}
         BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         mkdir -p binary
-        go build -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME}" -o binary/bytefreezer-packer-linux-amd64 .
+        go build -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GITHUB_SHA}" -o binary/bytefreezer-packer-linux-amd64 .
         chmod +x binary/bytefreezer-packer-linux-amd64
 
     - name: Install FPM for package building
