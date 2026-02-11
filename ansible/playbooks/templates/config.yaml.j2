@@ -26,6 +26,7 @@ control_service:
   control_url: "{{ bytefreezer_control_url }}"
   api_key: "{{ bytefreezer_api_key }}"
   timeout_seconds: {{ config.control_service.timeout_seconds }}
+  account_id: "{{ config.control_service.account_id | default('') }}"
 
 # OpenTelemetry configuration
 otel:

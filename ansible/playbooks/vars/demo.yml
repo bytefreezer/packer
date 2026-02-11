@@ -54,6 +54,7 @@ config:
     enabled: true
     # api_key comes from AWX variable: bytefreezer_api_key
     timeout_seconds: 30
+    account_id: "managed"
 
   otel:
     enabled: true
