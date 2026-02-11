@@ -74,6 +74,10 @@ func Run() error {
 		return errors.Wrap(err, "failed to load config")
 	}
 
+	// Set runtime build info from ldflags (overrides config file values)
+	conf.App.GitCommit = gitCommit
+	conf.App.Version = version
+
 	setLogLevel(conf.Logging.Level)
 
 	// Handle clear-locks flag

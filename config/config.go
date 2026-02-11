@@ -109,6 +109,7 @@ type App struct {
 	Name           string `mapstructure:"name"`
 	Version        string `mapstructure:"version"`
 	DeploymentType string `mapstructure:"deployment_type"` // "managed" or "onprem"
+	GitCommit      string `mapstructure:"-"`
 }
 
 // LoggingConfig stores global logging configurations

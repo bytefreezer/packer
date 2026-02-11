@@ -35,7 +35,6 @@ logrotate:
 config:
   app:
     name: "bytefreezer-packer"
-    version: "1.0.0"
     deployment_type: "managed"
 
   logging:
