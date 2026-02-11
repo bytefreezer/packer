@@ -14,7 +14,7 @@ echo "🔨 Building $PROJECT_NAME..."
 mkdir -p "$ANSIBLE_DIST_DIR"
 
 # Get version info
-VERSION="local-$(date +%Y%m%d-%H%M%S)"
+VERSION="local-$(git rev-parse --short HEAD)"
 BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
