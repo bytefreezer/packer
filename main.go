@@ -533,9 +533,11 @@ func buildHealthConfiguration(conf *config.Config, instanceAPI string) map[strin
 		},
 	}
 
-	// Add account_id at root level if configured (for on-prem installs)
+	// Add account_id at root level for health labeling
 	if conf.ControlService.AccountID != "" {
 		configMap["account_id"] = conf.ControlService.AccountID
+	} else if conf.App.DeploymentType != "" {
+		configMap["account_id"] = conf.App.DeploymentType
 	}
 
 	return configMap
