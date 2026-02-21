@@ -167,20 +167,6 @@ func (sdm *S3DestinationManager) GetFailureData(tenantID, datasetID string) *Des
 	return &DestinationFailureData{Active: true}
 }
 
-// GetConnectionCount returns the number of active connections
-func (sdm *S3DestinationManager) GetConnectionCount() int {
-	sdm.mutex.RLock()
-	defer sdm.mutex.RUnlock()
-	return len(sdm.connections)
-}
-
-// GetFailureCount returns the number of destinations with failures
-func (sdm *S3DestinationManager) GetFailureCount() int {
-	sdm.mutex.RLock()
-	defer sdm.mutex.RUnlock()
-	return len(sdm.failureData)
-}
-
 // CloseAll closes all S3 connections (for cleanup)
 func (sdm *S3DestinationManager) CloseAll() {
 	sdm.mutex.Lock()

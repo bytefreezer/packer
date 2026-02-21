@@ -485,10 +485,10 @@ func buildHealthConfiguration(conf *config.Config, instanceAPI string) map[strin
 		if value == "" {
 			return ""
 		}
-		if len(value) <= 4 {
-			return "****"
+		if len(value) <= 8 {
+			return "***"
 		}
-		return value[:2] + "****" + value[len(value)-2:]
+		return value[:4] + "***" + value[len(value)-4:]
 	}
 
 	configMap := map[string]interface{}{
