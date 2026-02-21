@@ -90,7 +90,7 @@ func (mm *MetadataManagerV2) UpdateMetadataAfterUpload(ctx context.Context, tena
 		}
 	} else {
 		// Leaf-level: Generate metadata only for the partition containing this file
-		partitionPath := mm.getPartitionPath(uploadedFilePath)
+		partitionPath := storage.ExtractPartitionPath(uploadedFilePath)
 		if err := mm.regenerateMetadataFromDatabase(ctx, tenant.ID, dataset.ID, dataset.S3Destination, partitionPath); err != nil {
 			return fmt.Errorf("failed to regenerate leaf-level metadata files: %w", err)
 		}
@@ -340,39 +340,9 @@ func (mm *MetadataManagerV2) constructMetadataKey(partitionPath, fileName string
 	return cleanPath + fileName
 }
 
-// getPartitionPath extracts the partition path from uploaded file path
-func (mm *MetadataManagerV2) getPartitionPath(uploadedFilePath string) string {
-	// Extract partition from path like: customer-1/ebpf-data/data/parquet/year=2024/month=01/day=15/file.parquet
-	// Should return only the Hive partition: year=2024/month=01/day=15
-	// This must match the format used by ParquetMetadataExtractor.extractPartitionPath()
-
-	dir := filepath.Dir(uploadedFilePath)
-	parts := strings.Split(dir, "/")
-
-	// Look for Hive-style partitions (key=value)
-	var partitionParts []string
-	for _, part := range parts {
-		if strings.Contains(part, "=") {
-			partitionParts = append(partitionParts, part)
-		}
-	}
-
-	if len(partitionParts) > 0 {
-		return strings.Join(partitionParts, "/")
-	}
-
-	// If no Hive-style partitions found, use the directory path
-	// but skip the tenant/dataset parts (first 2 components typically)
-	if len(parts) > 2 {
-		return strings.Join(parts[2:], "/")
-	}
-
-	return ""
-}
-
 // GetMetadataInfo returns information about metadata files for a directory
 func (mm *MetadataManagerV2) GetMetadataInfo(ctx context.Context, tenantID, datasetID string, s3Dest *domain.S3Destination, directory string) (*MetadataInfo, error) {
-	partitionPath := mm.getPartitionPath(directory)
+	partitionPath := storage.ExtractPartitionPath(directory)
 
 	// Get data from Control API first
 	summary, err := mm.metadataClient.GetMetadataSummary(ctx, tenantID, datasetID, partitionPath)
@@ -414,7 +384,7 @@ func (mm *MetadataManagerV2) checkMetadataFileExists(ctx context.Context, s3Dest
 
 // ValidateMetadataExists checks if metadata files exist for a given directory
 func (mm *MetadataManagerV2) ValidateMetadataExists(ctx context.Context, tenantID, datasetID string, s3Dest *domain.S3Destination, directory string) (bool, error) {
-	partitionPath := mm.getPartitionPath(directory)
+	partitionPath := storage.ExtractPartitionPath(directory)
 	return mm.checkMetadataFileExists(ctx, s3Dest, tenantID, datasetID, partitionPath, "_metadata")
 }
 

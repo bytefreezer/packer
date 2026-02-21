@@ -80,7 +80,7 @@ func (pme *ParquetMetadataExtractor) ExtractFileMetadata(ctx context.Context, te
 	}
 
 	// Extract partition path
-	partitionPath := pme.extractPartitionPath(filePath)
+	partitionPath := ExtractPartitionPath(filePath)
 
 	// Download and read the Parquet file to extract real metadata
 	reader, err := s3Client.GetObjectReader(ctx, filePath)
@@ -152,17 +152,14 @@ func (pme *ParquetMetadataExtractor) ExtractFileMetadata(ctx context.Context, te
 	return metadata, nil
 }
 
-// extractPartitionPath extracts the partition path from a file path
-func (pme *ParquetMetadataExtractor) extractPartitionPath(filePath string) string {
-	// Extract partition from path like: tenant1/dataset1/year=2024/month=01/day=15/file.parquet
-	// Should return: year=2024/month=01/day=15
-
+// ExtractPartitionPath extracts Hive-style partition path (key=value) from a file path.
+// For "tenant1/dataset1/year=2024/month=01/day=15/file.parquet" returns "year=2024/month=01/day=15".
+func ExtractPartitionPath(filePath string) string {
 	dir := filepath.Dir(filePath)
 	parts := strings.Split(dir, "/")
 
 	var partitionParts []string
 	for _, part := range parts {
-		// Look for Hive-style partitions (key=value) using compiled regex
 		if hivePartitionRegex.MatchString(part) {
 			partitionParts = append(partitionParts, part)
 		}
@@ -172,8 +169,7 @@ func (pme *ParquetMetadataExtractor) extractPartitionPath(filePath string) strin
 		return strings.Join(partitionParts, "/")
 	}
 
-	// If no Hive-style partitions found, use the directory path
-	// but skip the tenant/dataset parts (first 2 components typically)
+	// Fallback: skip tenant/dataset prefix (first 2 components)
 	if len(parts) > 2 {
 		return strings.Join(parts[2:], "/")
 	}
