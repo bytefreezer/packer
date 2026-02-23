@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -35,6 +36,41 @@ var (
 	conf      = config.Config{}
 	envPrefix = "BYTEFREEZER_"
 )
+
+// getDockerContainerID returns the short container ID if running inside Docker, empty string otherwise.
+func getDockerContainerID() string {
+	if _, err := os.Stat("/.dockerenv"); err != nil {
+		return ""
+	}
+	data, err := os.ReadFile("/proc/self/cgroup")
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		if idx := strings.LastIndex(line, "/docker/"); idx != -1 {
+			id := line[idx+len("/docker/"):]
+			if len(id) >= 12 {
+				return id[:12]
+			}
+		}
+		if idx := strings.LastIndex(line, "/docker-"); idx != -1 {
+			id := strings.TrimSuffix(line[idx+len("/docker-"):], ".scope")
+			if len(id) >= 12 {
+				return id[:12]
+			}
+		}
+	}
+	data, err = os.ReadFile("/proc/1/cpuset")
+	if err != nil {
+		return ""
+	}
+	cpuset := strings.TrimSpace(string(data))
+	id := filepath.Base(cpuset)
+	if len(id) >= 12 && id != "/" {
+		return id[:12]
+	}
+	return ""
+}
 
 // Execute executes the root command.
 func Run() error {
@@ -115,7 +151,10 @@ func Run() error {
 	}
 
 	// Cleanup locks from this instance (abandoned from previous runs/crashes)
-	hostname, _ := os.Hostname()
+	hostname := getDockerContainerID()
+	if hostname == "" {
+		hostname, _ = os.Hostname()
+	}
 	if hostname == "" {
 		hostname = "packer-unknown"
 	}
@@ -179,13 +218,18 @@ func Run() error {
 			timeout = 30 * time.Second // Default 30 seconds
 		}
 
-		// Get actual hostname
+		// Get instance ID: prefer Docker container ID, then hostname
 		// If running in Kubernetes with NODE_NAME env var, use node.pod format
-		// This helps operators identify both the node and specific pod for debugging
-		hostname, err := os.Hostname()
-		if err != nil {
-			log.Warnf("Failed to get hostname, using 'localhost': %v", err)
-			hostname = "localhost"
+		hostname := getDockerContainerID()
+		if hostname != "" {
+			log.Infof("Running in Docker container, instance ID: %s", hostname)
+		} else {
+			var err error
+			hostname, err = os.Hostname()
+			if err != nil {
+				log.Warnf("Failed to get hostname, using 'localhost': %v", err)
+				hostname = "localhost"
+			}
 		}
 		if nodeName := os.Getenv("NODE_NAME"); nodeName != "" && nodeName != hostname {
 			// In K8s: hostname is the pod name, NODE_NAME is the actual node
@@ -551,14 +595,17 @@ func cleanupStaleOperations(cfg *config.Config) {
 		return
 	}
 
-	hostname, _ := os.Hostname()
-	if hostname == "" {
-		hostname = "packer-unknown"
+	cleanupHostname := getDockerContainerID()
+	if cleanupHostname == "" {
+		cleanupHostname, _ = os.Hostname()
+	}
+	if cleanupHostname == "" {
+		cleanupHostname = "packer-unknown"
 	}
 
 	payload := map[string]string{
 		"service_type": "packer",
-		"instance_id":  hostname,
+		"instance_id":  cleanupHostname,
 	}
 
 	body, err := sonic.Marshal(payload)
