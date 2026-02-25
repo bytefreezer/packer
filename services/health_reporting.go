@@ -6,6 +6,7 @@ package services
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -26,6 +27,7 @@ type HealthReportingService struct {
 	enabled        bool
 	stopChan       chan bool
 	config         map[string]interface{} // Full configuration data to report
+	uninstallChan  chan struct{}          // Signals that control plane requested uninstall
 }
 
 // ServiceRegistrationRequest represents a service registration request
@@ -59,6 +61,7 @@ type HealthReportRequest struct {
 type HealthReportResponse struct {
 	Success bool   `json:"success"`
 	Message string `json:"message"`
+	Action  string `json:"action,omitempty"`
 }
 
 // NewHealthReportingService creates a new health reporting service
@@ -73,10 +76,11 @@ func NewHealthReportingService(controlURL, serviceType, instanceAPI, apiKey stri
 		httpClient: &http.Client{
 			Timeout: timeout,
 		},
-		apiKey:   apiKey,
-		enabled:  true,
-		stopChan: make(chan bool),
-		config:   config,
+		apiKey:        apiKey,
+		enabled:       true,
+		stopChan:      make(chan bool),
+		config:        config,
+		uninstallChan: make(chan struct{}, 1),
 	}
 }
 
@@ -236,8 +240,28 @@ func (h *HealthReportingService) SendHealthReport(healthy bool, configuration ma
 		return fmt.Errorf("health report failed with status %d", resp.StatusCode)
 	}
 
+	// Parse response to check for pending actions from control plane
+	respBody, err := io.ReadAll(resp.Body)
+	if err == nil && len(respBody) > 0 {
+		var reportResp HealthReportResponse
+		if err := sonic.Unmarshal(respBody, &reportResp); err == nil && reportResp.Action != "" {
+			log.Warnf("Received action directive from control plane: %s", reportResp.Action)
+			if reportResp.Action == "uninstall" {
+				select {
+				case h.uninstallChan <- struct{}{}:
+				default:
+				}
+			}
+		}
+	}
+
 	log.Debugf("Successfully sent health report for %s (healthy: %v)", h.serviceType, healthy)
 	return nil
+}
+
+// UninstallChan returns a channel that signals when control plane requests uninstall
+func (h *HealthReportingService) UninstallChan() <-chan struct{} {
+	return h.uninstallChan
 }
 
 // reportingLoop runs the periodic health reporting
@@ -265,13 +289,6 @@ func (h *HealthReportingService) reportingLoop() {
 
 // isServiceHealthy performs basic health checks
 func (h *HealthReportingService) isServiceHealthy() bool {
-	// Basic health check - service is healthy if we can execute this function
-	// In a real implementation, this would check:
-	// - UDP listener health
-	// - Receiver connectivity
-	// - Spooling directory availability
-	// - Memory usage
-	// - Disk space
 	return true
 }
 

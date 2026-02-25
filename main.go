@@ -13,6 +13,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"strconv"
@@ -264,6 +265,15 @@ func Run() error {
 		healthReportingService.Start()
 		defer healthReportingService.Stop()
 		log.Infof("Health reporting service started - reporting to %s every %v", conf.ControlService.ControlURL, reportInterval)
+
+		// Listen for uninstall directive from control plane
+		go func() {
+			<-healthReportingService.UninstallChan()
+			log.Warnf("Received uninstall directive from control plane — shutting down and self-removing")
+			healthReportingService.Stop()
+			selfCleanup("bytefreezer-packer")
+			os.Exit(0)
+		}()
 	} else {
 		log.Info("Health reporting is disabled")
 	}
@@ -643,6 +653,28 @@ func cleanupStaleOperations(cfg *config.Config) {
 	} else {
 		log.Warnf("Failed to cleanup stale operations: HTTP %d", resp.StatusCode)
 	}
+}
+
+// selfCleanup attempts to remove the service binary and systemd unit (best-effort)
+func selfCleanup(serviceName string) {
+	// #nosec G204 -- serviceName is always a hardcoded constant from caller
+	if err := exec.Command("systemctl", "disable", "--now", serviceName+".service").Run(); err != nil {
+		log.Debugf("systemctl disable %s: %v (may not be a systemd service)", serviceName, err)
+	}
+
+	unitPath := "/etc/systemd/system/" + serviceName + ".service"
+	if err := os.Remove(unitPath); err != nil && !os.IsNotExist(err) {
+		log.Debugf("Failed to remove unit file %s: %v", unitPath, err)
+	}
+
+	binaryPath, err := os.Executable()
+	if err == nil {
+		if err := os.Remove(binaryPath); err != nil {
+			log.Debugf("Failed to remove binary %s: %v", binaryPath, err)
+		}
+	}
+
+	log.Infof("Self-cleanup completed for %s", serviceName)
 }
 
 func main() {
