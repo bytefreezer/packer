@@ -28,6 +28,7 @@ type HealthReportingService struct {
 	stopChan       chan bool
 	config         map[string]interface{} // Full configuration data to report
 	uninstallChan  chan struct{}          // Signals that control plane requested uninstall
+	upgradeChan    chan string            // Carries the upgrade tag when control plane requests upgrade
 }
 
 // ServiceRegistrationRequest represents a service registration request
@@ -59,9 +60,10 @@ type HealthReportRequest struct {
 
 // HealthReportResponse represents a health report response
 type HealthReportResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
-	Action  string `json:"action,omitempty"`
+	Success    bool   `json:"success"`
+	Message    string `json:"message"`
+	Action     string `json:"action,omitempty"`
+	UpgradeTag string `json:"upgrade_tag,omitempty"`
 }
 
 // NewHealthReportingService creates a new health reporting service
@@ -81,6 +83,7 @@ func NewHealthReportingService(controlURL, serviceType, instanceAPI, apiKey stri
 		stopChan:      make(chan bool),
 		config:        config,
 		uninstallChan: make(chan struct{}, 1),
+		upgradeChan:   make(chan string, 1),
 	}
 }
 
@@ -251,6 +254,12 @@ func (h *HealthReportingService) SendHealthReport(healthy bool, configuration ma
 				case h.uninstallChan <- struct{}{}:
 				default:
 				}
+			} else if reportResp.Action == "upgrade" && reportResp.UpgradeTag != "" {
+				log.Warnf("Upgrade directive received — target tag: %s", reportResp.UpgradeTag)
+				select {
+				case h.upgradeChan <- reportResp.UpgradeTag:
+				default:
+				}
 			}
 		}
 	}
@@ -262,6 +271,11 @@ func (h *HealthReportingService) SendHealthReport(healthy bool, configuration ma
 // UninstallChan returns a channel that signals when control plane requests uninstall
 func (h *HealthReportingService) UninstallChan() <-chan struct{} {
 	return h.uninstallChan
+}
+
+// UpgradeChan returns a channel that carries the upgrade tag when control plane requests upgrade
+func (h *HealthReportingService) UpgradeChan() <-chan string {
+	return h.upgradeChan
 }
 
 // reportingLoop runs the periodic health reporting
