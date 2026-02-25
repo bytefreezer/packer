@@ -24,8 +24,8 @@ go.work
 # sqllite db file or local testing.
 gorm.db
 
-#ignore build file
-#bytefreezer-packer
+# Build binaries
+bytefreezer-packer
 
 #ignore claude
 CLAUDE.md
@@ -39,4 +39,4 @@ spool/
 *.ndjson
 
 # Ansible build artifacts
-#ansible/playbooks/dist/
+ansible/playbooks/dist/
