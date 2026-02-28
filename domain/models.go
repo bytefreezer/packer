@@ -13,6 +13,7 @@ type Dataset struct {
 	ID               string            `json:"id"`
 	Name             string            `json:"name"`
 	TenantID         string            `json:"tenant_id"`
+	Testing          bool              `json:"testing"`
 	S3Destination    *S3Destination    `json:"s3_destination"`
 	ProcessingConfig *ProcessingConfig `json:"processing_config,omitempty"`
 }

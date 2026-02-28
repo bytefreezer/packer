@@ -311,7 +311,8 @@ func (tp *TenantProcessor) processDatasetStreaming(ctx context.Context, tenant *
 	log.Infof("Found %d NDJSON files for streaming processing of dataset %s in tenant %s", len(files), dataset.ID, tenant.ID)
 
 	// Step 1.5: Check accumulation state if client is available
-	if tp.accumulationClient != nil {
+	// Testing mode bypasses accumulation — process immediately
+	if tp.accumulationClient != nil && !dataset.Testing {
 		shouldProcess, accState := tp.checkAccumulationState(ctx, tenant.ID, dataset.ID, files)
 		if !shouldProcess {
 			// Threshold not met - skip processing, files stay in MinIO
@@ -330,6 +331,9 @@ func (tp *TenantProcessor) processDatasetStreaming(ctx context.Context, tenant *
 			log.Infof("Dataset %s/%s: threshold met (%s), flushing %d files (%d bytes)",
 				tenant.ID, dataset.ID, accState.FlushReason, len(files), accState.AccumulatedBytes)
 		}
+	} else if dataset.Testing {
+		log.Infof("Dataset %s/%s: testing mode — bypassing accumulation, processing %d files immediately",
+			tenant.ID, dataset.ID, len(files))
 	}
 
 	// Step 2: Calculate batch hash for idempotent uploads
@@ -498,7 +502,8 @@ func (tp *TenantProcessor) processDatasetInternal(ctx context.Context, tenant *d
 	log.Infof("Found %d NDJSON files for dataset %s in tenant %s", len(files), dataset.ID, tenant.ID)
 
 	// Step 1.5: Check accumulation state if client is available
-	if tp.accumulationClient != nil {
+	// Testing mode bypasses accumulation — process immediately
+	if tp.accumulationClient != nil && !dataset.Testing {
 		shouldProcess, accState := tp.checkAccumulationState(ctx, tenant.ID, dataset.ID, files)
 		if !shouldProcess {
 			// Threshold not met - skip processing, files stay in MinIO
@@ -517,6 +522,9 @@ func (tp *TenantProcessor) processDatasetInternal(ctx context.Context, tenant *d
 			log.Infof("Dataset %s/%s: threshold met (%s), flushing %d files (%d bytes)",
 				tenant.ID, dataset.ID, accState.FlushReason, len(files), accState.AccumulatedBytes)
 		}
+	} else if dataset.Testing {
+		log.Infof("Dataset %s/%s: testing mode — bypassing accumulation, processing %d files immediately",
+			tenant.ID, dataset.ID, len(files))
 	}
 
 	// Step 1.6: Calculate batch hash for idempotent uploads

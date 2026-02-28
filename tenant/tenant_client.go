@@ -202,6 +202,7 @@ func (tc *TenantClient) fetchTenantsFromControlService(ctx context.Context) ([]d
 						ID:               ds.ID,
 						Name:             ds.Name,
 						TenantID:         ct.ID,
+						Testing:          ds.Testing,
 						S3Destination:    s3Dest,
 						ProcessingConfig: procConfig,
 					})
