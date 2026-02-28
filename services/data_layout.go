@@ -14,14 +14,6 @@ import (
 
 // DataLayoutManager handles secure data layout and prevents cross-tenant contamination
 type DataLayoutManager struct {
-	globalBucketRegistry map[string]*BucketOwnership // bucket -> ownership info
-}
-
-// BucketOwnership tracks which tenant owns a bucket to prevent conflicts
-type BucketOwnership struct {
-	OwnerTenantID   string
-	OwnerTenantName string
-	RegisteredAt    time.Time
 }
 
 // FileMetadata contains metadata about the parquet file content
@@ -61,9 +53,7 @@ type DataLayout struct {
 
 // NewDataLayoutManager creates a new data layout manager
 func NewDataLayoutManager() *DataLayoutManager {
-	return &DataLayoutManager{
-		globalBucketRegistry: make(map[string]*BucketOwnership),
-	}
+	return &DataLayoutManager{}
 }
 
 // GenerateSecureLayout generates a secure data layout for a dataset with cross-tenant protection
@@ -81,12 +71,7 @@ func (dlm *DataLayoutManager) GenerateSecureLayout(tenant *domain.Tenant, datase
 		layout.BatchHash = batchHash[0]
 	}
 
-	// Step 1: Verify bucket ownership and prevent cross-tenant contamination
-	if err := dlm.validateBucketOwnership(tenant.ID, tenant.Name, dataset.S3Destination.BucketName); err != nil {
-		return nil, fmt.Errorf("bucket ownership validation failed: %w", err)
-	}
-
-	// Step 2: Generate secure directory structure
+	// Step 1: Generate secure directory structure
 	layout.TenantDirectory = dlm.generateSecureTenantDirectory(tenant)
 	layout.DatasetDirectory = dlm.generateSecureDatasetDirectory(dataset)
 
@@ -134,35 +119,6 @@ func (dlm *DataLayoutManager) GenerateSecureLayout(tenant *domain.Tenant, datase
 
 	layout.IsSecure = true
 	return layout, nil
-}
-
-// validateBucketOwnership ensures a bucket is only used by one tenant
-func (dlm *DataLayoutManager) validateBucketOwnership(tenantID, tenantName, bucketName string) error {
-	// Normalize bucket name to prevent case-based attacks
-	bucketName = strings.ToLower(strings.TrimSpace(bucketName))
-
-	if bucketName == "" {
-		return fmt.Errorf("bucket name cannot be empty")
-	}
-
-	// Check if bucket is already registered to a different tenant
-	if ownership, exists := dlm.globalBucketRegistry[bucketName]; exists {
-		if ownership.OwnerTenantID != tenantID {
-			return fmt.Errorf("SECURITY VIOLATION: bucket '%s' is already owned by tenant '%s' (requested by tenant '%s')",
-				bucketName, ownership.OwnerTenantID, tenantID)
-		}
-		// Bucket already registered to this tenant - OK
-		return nil
-	}
-
-	// Register bucket to this tenant
-	dlm.globalBucketRegistry[bucketName] = &BucketOwnership{
-		OwnerTenantID:   tenantID,
-		OwnerTenantName: tenantName,
-		RegisteredAt:    time.Now(),
-	}
-
-	return nil
 }
 
 // generateSecureTenantDirectory creates a secure tenant directory name
