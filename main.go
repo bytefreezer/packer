@@ -202,7 +202,8 @@ func Run() error {
 	}
 	defer orchestrator.Stop()
 
-	// Set the orchestrator in the API for processing endpoints
+	// Set the orchestrator on server and API
+	server.Orchestrator = orchestrator
 	server.HttpApi.SetProcessingOrchestrator(orchestrator)
 
 	// Initialize health reporting service
@@ -389,12 +390,13 @@ func setLogLevel(levelStr string) {
 
 // Server provides basic service functions and state common to all service types
 type Server struct {
-	Config   *config.Config
-	Name     string
-	quitterC chan time.Duration // also internal-only
-	HttpApi  *api.API
-	Services *services.Services
-	//here you can add other services
+	Config       *config.Config
+	Name         string
+	quitterC     chan time.Duration // also internal-only
+	stopCh       chan struct{}      // broadcast shutdown to all goroutines
+	HttpApi      *api.API
+	Services     *services.Services
+	Orchestrator *services.ProcessingOrchestrator
 }
 
 func NewServer(services *services.Services, conf *config.Config) *Server {
@@ -402,6 +404,7 @@ func NewServer(services *services.Services, conf *config.Config) *Server {
 		Config:   conf,
 		Name:     conf.App.Name,
 		quitterC: make(chan time.Duration),
+		stopCh:   make(chan struct{}),
 		Services: services,
 	}
 }
@@ -433,6 +436,11 @@ func (svc *Server) Start(housekeepingFn func(), quitterFn func(time.Duration)) {
 	log.Info("Running initial housekeeping on startup...")
 	if housekeepingFn != nil && svc.Config.Housekeeping.Enabled {
 		housekeepingFn()
+	}
+
+	// Start fast-path ticker for testing datasets
+	if testingInterval := svc.Config.Housekeeping.TestingIntervalSeconds; testingInterval > 0 {
+		go svc.testingHousekeepingLoop(time.Duration(testingInterval) * time.Second)
 	}
 
 	// Continue with randomized intervals for subsequent cycles
@@ -470,12 +478,58 @@ func (svc *Server) Start(housekeepingFn func(), quitterFn func(time.Duration)) {
 			svc.HttpApi.Stop()
 
 			return
+
+		case <-svc.stopCh:
+			timer.Stop()
+			return
+		}
+	}
+}
+
+// testingHousekeepingLoop runs a fast-path ticker that schedules only testing-mode
+// datasets for processing. This avoids the full housekeeping cycle (tenant DB refresh,
+// lock cleanup, etc.) while giving testing datasets a much shorter time-to-parquet.
+func (svc *Server) testingHousekeepingLoop(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	log.Infof("Testing fast-path housekeeping started (interval: %v)", interval)
+
+	for {
+		select {
+		case <-ticker.C:
+			tenants := svc.Config.TenantDatabase.GetAllTenants()
+			scheduled := 0
+			for _, t := range tenants {
+				for _, dataset := range t.Datasets {
+					if dataset.Testing {
+						if err := svc.Orchestrator.ScheduleDatasetProcessing(t.ID, dataset.ID, 2); err != nil {
+							log.Errorf("Testing fast-path: failed to schedule %s/%s: %v", t.ID, dataset.ID, err)
+						} else {
+							scheduled++
+						}
+					}
+				}
+			}
+			if scheduled > 0 {
+				log.Debugf("Testing fast-path: scheduled %d testing datasets", scheduled)
+			}
+		case <-svc.stopCh:
+			log.Info("Testing fast-path housekeeping stopped")
+			return
 		}
 	}
 }
 
 func (svc *Server) Stop(timeout time.Duration) error {
 	log.Debugf("sending timeout %s to quitterC:", timeout)
+
+	// Signal all goroutines (testing ticker, etc.) to stop
+	select {
+	case <-svc.stopCh:
+		// already closed
+	default:
+		close(svc.stopCh)
+	}
 
 	// Try to send timeout to main loop, wait up to the timeout duration
 	select {
