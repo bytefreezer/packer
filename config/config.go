@@ -88,9 +88,10 @@ type ParquetConfig struct {
 }
 
 type Housekeeping struct {
-	Enabled         bool                `mapstructure:"enabled"`
-	IntervalSeconds int                 `mapstructure:"intervalseconds"`
-	Cleanup         HousekeepingCleanup `mapstructure:"cleanup"`
+	Enabled                bool                `mapstructure:"enabled"`
+	IntervalSeconds        int                 `mapstructure:"interval_seconds"`
+	TestingIntervalSeconds int                 `mapstructure:"testing_interval_seconds"`
+	Cleanup                HousekeepingCleanup `mapstructure:"cleanup"`
 }
 
 type HousekeepingCleanup struct {
