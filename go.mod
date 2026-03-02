@@ -11,7 +11,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.18.17
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.88.5
 	github.com/bytedance/sonic v1.14.2
-	github.com/bytefreezer/goodies/control-client v0.1.1
+	github.com/bytefreezer/goodies/control-client v0.1.2
 	github.com/jeremywohl/flatten v1.0.1
 	github.com/knadh/koanf/parsers/yaml v0.1.0
 	github.com/knadh/koanf/providers/env v0.1.0

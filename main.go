@@ -291,6 +291,17 @@ func Run() error {
 		log.Info("Health reporting is disabled")
 	}
 
+	// Initialize destination tester for local_storage datasets
+	var destinationTester *services.DestinationTester
+	if conf.ControlService.ControlURL != "" && conf.S3DestinationManager != nil {
+		destinationTester = services.NewDestinationTester(
+			conf.ControlService.ControlURL,
+			conf.ControlService.APIKey,
+			conf.S3DestinationManager,
+		)
+		log.Info("Destination tester initialized for local_storage datasets")
+	}
+
 	// Track tenant update failures for SOC alerting
 	var tenantUpdateFailures int
 
@@ -361,6 +372,11 @@ func Run() error {
 			} else {
 				log.Debug("Lock cleanup enabled but no heartbeat-capable lock client available")
 			}
+		}
+
+		// Step 5: Test destination for local_storage datasets and report to control
+		if destinationTester != nil {
+			destinationTester.TestAndReportAll(tenants)
 		}
 
 		log.Debug("Housekeeping cycle completed")
