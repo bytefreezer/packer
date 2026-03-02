@@ -427,7 +427,7 @@ func (svc *Server) Start(housekeepingFn func(), quitterFn func(time.Duration)) {
 
 	if baseInterval <= 0 {
 		baseInterval = 10 * time.Second
-		log.Errorf("invalid housekeeping-interval: %d", baseInterval)
+		log.Errorf("invalid housekeeping-interval, using default: %v", baseInterval)
 	}
 
 	log.Infof("Starting housekeeping with base interval %v (randomized 1x-2x for load balancing)", baseInterval)

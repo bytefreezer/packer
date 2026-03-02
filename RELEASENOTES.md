@@ -1,5 +1,15 @@
 # ByteFreezer Packer - Release Notes
 
+## 2026-03-01 - Housekeeping Interval Config Fix
+
+### Bug Fix
+
+#### Housekeeping IntervalSeconds mapstructure tag mismatch
+- **Issue**: `Housekeeping.IntervalSeconds` had mapstructure tag `"intervalseconds"` but YAML config uses `interval_seconds` (with underscore). Config value was silently ignored, defaulting to 10s fallback.
+- **Fix**: Changed mapstructure tag from `"intervalseconds"` to `"interval_seconds"` in `config/config.go:92`
+- **Additional**: Improved error message format in `main.go:430` (was printing nanoseconds, now uses `%v`)
+- **Impact**: `housekeeping.interval_seconds` YAML config value now correctly parsed. Previously all packer instances ran housekeeping every 10s instead of the configured interval.
+
 ## v2.2.6 - Critical Upload Worker Pool Startup Fix (2025-10-29)
 
 ### Bug Fixes
