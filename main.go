@@ -220,21 +220,22 @@ func Run() error {
 			timeout = 30 * time.Second // Default 30 seconds
 		}
 
-		// Get instance ID: prefer Docker container ID, then hostname
-		// If running in Kubernetes with NODE_NAME env var, use node.pod format
-		hostname := getDockerContainerID()
-		if hostname != "" {
-			log.Infof("Running in Docker container, instance ID: %s", hostname)
-		} else {
-			var err error
-			hostname, err = os.Hostname()
-			if err != nil {
-				log.Warnf("Failed to get hostname, using 'localhost': %v", err)
-				hostname = "localhost"
+		// Build instance ID: host:containerID for Docker, node.pod for K8s, hostname for bare metal
+		containerID := getDockerContainerID()
+		hostname, _ := os.Hostname()
+		if hostname == "" {
+			hostname = "localhost"
+		}
+		if containerID != "" {
+			// Docker: use HOST_HOSTNAME env var if set, otherwise fall back to container ID
+			if hostHostname := os.Getenv("HOST_HOSTNAME"); hostHostname != "" {
+				hostname = fmt.Sprintf("%s:%s", hostHostname, containerID)
+			} else {
+				hostname = containerID
 			}
+			log.Infof("Running in Docker container, instance ID: %s", hostname)
 		}
 		if nodeName := os.Getenv("NODE_NAME"); nodeName != "" && nodeName != hostname {
-			// In K8s: hostname is the pod name, NODE_NAME is the actual node
 			hostname = fmt.Sprintf("%s.%s", nodeName, hostname)
 			log.Infof("Running in Kubernetes on node %s, instance ID: %s", nodeName, hostname)
 		}
