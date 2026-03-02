@@ -14,6 +14,7 @@ type Dataset struct {
 	Name             string            `json:"name"`
 	TenantID         string            `json:"tenant_id"`
 	Testing          bool              `json:"testing"`
+	LocalStorage     bool              `json:"local_storage"`
 	S3Destination    *S3Destination    `json:"s3_destination"`
 	ProcessingConfig *ProcessingConfig `json:"processing_config,omitempty"`
 }
