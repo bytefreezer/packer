@@ -292,9 +292,8 @@ func Run() error {
 	}
 
 	// Initialize destination tester for local_storage datasets
-	var destinationTester *services.DestinationTester
 	if conf.ControlService.ControlURL != "" && conf.S3DestinationManager != nil {
-		destinationTester = services.NewDestinationTester(
+		server.DestinationTester = services.NewDestinationTester(
 			conf.ControlService.ControlURL,
 			conf.ControlService.APIKey,
 			conf.S3DestinationManager,
@@ -375,8 +374,8 @@ func Run() error {
 		}
 
 		// Step 5: Test destination for local_storage datasets and report to control
-		if destinationTester != nil {
-			destinationTester.TestAndReportAll(tenants)
+		if server.DestinationTester != nil {
+			server.DestinationTester.TestAndReportAll(tenants)
 		}
 
 		log.Debug("Housekeeping cycle completed")
@@ -406,13 +405,14 @@ func setLogLevel(levelStr string) {
 
 // Server provides basic service functions and state common to all service types
 type Server struct {
-	Config       *config.Config
-	Name         string
-	quitterC     chan time.Duration // also internal-only
-	stopCh       chan struct{}      // broadcast shutdown to all goroutines
-	HttpApi      *api.API
-	Services     *services.Services
-	Orchestrator *services.ProcessingOrchestrator
+	Config            *config.Config
+	Name              string
+	quitterC          chan time.Duration // also internal-only
+	stopCh            chan struct{}      // broadcast shutdown to all goroutines
+	HttpApi           *api.API
+	Services          *services.Services
+	Orchestrator      *services.ProcessingOrchestrator
+	DestinationTester *services.DestinationTester
 }
 
 func NewServer(services *services.Services, conf *config.Config) *Server {
@@ -528,6 +528,11 @@ func (svc *Server) testingHousekeepingLoop(interval time.Duration) {
 			}
 			if scheduled > 0 {
 				log.Debugf("Testing fast-path: scheduled %d testing datasets", scheduled)
+			}
+
+			// Also run destination tester for local_storage datasets
+			if svc.DestinationTester != nil {
+				svc.DestinationTester.TestAndReportAll(tenants)
 			}
 		case <-svc.stopCh:
 			log.Info("Testing fast-path housekeeping stopped")
