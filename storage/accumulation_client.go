@@ -187,6 +187,10 @@ func (c *AccumulationClient) MarkFlushed(ctx context.Context, tenantID, datasetI
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode == http.StatusNotFound {
+		// No accumulation state exists for this dataset (e.g. testing-mode datasets skip accumulation)
+		return nil, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("failed to mark accumulation flushed: status %d, body: %s", resp.StatusCode, string(bodyBytes))
