@@ -210,7 +210,37 @@ func LoadConfig(cfgFile, envPrefix string, cfg *Config) error {
 
 	log.Infof("Available keys in raw config: %+v", k.Keys())
 
+	// Validate configuration
+	validateConfig(cfg)
+
 	return nil
+}
+
+// validateConfig checks for common misconfigurations and logs effective config summary
+func validateConfig(cfg *Config) {
+	// Warn on misconfigured health reporting
+	if cfg.HealthReporting.Enabled && cfg.HealthReporting.ReportInterval <= 0 {
+		log.Warnf("CONFIG WARNING: health_reporting.enabled=true but report_interval=%d — health reports will use default interval", cfg.HealthReporting.ReportInterval)
+	}
+
+	// Warn on missing API port
+	if cfg.Server.ApiPort <= 0 {
+		log.Warnf("CONFIG WARNING: server.api_port=%d — API server will bind to random port, built-in health check on port 8083 will fail", cfg.Server.ApiPort)
+	}
+
+	// Warn on disabled housekeeping
+	if cfg.Housekeeping.Enabled && cfg.Housekeeping.IntervalSeconds <= 0 {
+		log.Warnf("CONFIG WARNING: housekeeping.enabled=true but interval_seconds=%d — housekeeping will use default 10s interval", cfg.Housekeeping.IntervalSeconds)
+	}
+
+	// Log effective config summary
+	log.Infof("=== EFFECTIVE CONFIG ===")
+	log.Infof("  server.api_port: %d", cfg.Server.ApiPort)
+	log.Infof("  s3source.bucket: %s, endpoint: %s", cfg.S3Source.BucketName, cfg.S3Source.Endpoint)
+	log.Infof("  control_service.enabled: %v, url: %s", cfg.ControlService.Enabled, cfg.ControlService.ControlURL)
+	log.Infof("  housekeeping.enabled: %v, interval_seconds: %d, testing_interval_seconds: %d", cfg.Housekeeping.Enabled, cfg.Housekeeping.IntervalSeconds, cfg.Housekeeping.TestingIntervalSeconds)
+	log.Infof("  health_reporting.enabled: %v, report_interval: %ds", cfg.HealthReporting.Enabled, cfg.HealthReporting.ReportInterval)
+	log.Infof("  parquet.compression: %s, max_file_size_mb: %d", cfg.Parquet.Compression, cfg.Parquet.MaxFileSizeMB)
 }
 
 // InitializeComponents initializes all components (tenant, SOC, S3, Control API)

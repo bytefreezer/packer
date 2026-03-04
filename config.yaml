@@ -44,7 +44,7 @@ otel:
 #this is the housekeeping default configuration
 housekeeping:
   enabled: true
-  intervalseconds: 60
+  interval_seconds: 60
   cleanup:
     enabled: true
     processing_dir_max_age_hours: 2

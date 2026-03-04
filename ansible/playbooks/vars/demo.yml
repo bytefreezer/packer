@@ -68,7 +68,7 @@ config:
 
   housekeeping:
     enabled: true
-    intervalseconds: 300
+    interval_seconds: 300
     cleanup:
       enabled: true
       processing_dir_max_age_hours: 2
