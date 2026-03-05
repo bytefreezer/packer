@@ -1,8 +1,8 @@
-# ByteFreezer Packer Configuration — Docker-ready defaults
+# ByteFreezer Packer Configuration — AWX/Ansible deployment
 #
-# This config ships inside the Docker image. Secrets (S3 credentials,
-# control API key) are empty and MUST be supplied via environment variables
-# or a volume-mounted config file override.
+# This file contains AWX placeholder values for systemd/Ansible deployments.
+# Ansible replaces REPLACE_WITH_AWX_VARIABLE_* at deploy time.
+# For Docker deployments, use config.yaml instead.
 
 app:
   name: bytefreezer-packer
@@ -19,33 +19,30 @@ bytefreezer:
   spool_path: /var/spool/bytefreezer-packer
   cache_path: /var/cache/bytefreezer-packer
 
-# Control Service configuration
 control_service:
   enabled: true
-  control_url: ""
-  api_key: ""
-  account_id: ""
+  control_url: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_control_url"
+  api_key: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_api_key"
+  account_id: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_account_id"
   timeout_seconds: 30
 
-# S3 source (processed data from piper)
 s3source:
   bucket_name: "bytefreezer-piper"
   region: "us-east-1"
-  access_key: ""
-  secret_key: ""
-  endpoint: "minio:9000"
+  access_key: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_s3_access_key"
+  secret_key: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_s3_secret_key"
+  endpoint: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_s3_endpoint"
   ssl: false
   use_iam_role: false
 
-# OpenTelemetry
 otel:
-  enabled: false
+  enabled: true
   metrics_port: 9093
   metrics_host: "0.0.0.0"
 
 housekeeping:
   enabled: true
-  interval_seconds: 300
+  interval_seconds: 60
   cleanup:
     enabled: true
     processing_dir_max_age_hours: 2
@@ -63,7 +60,6 @@ uploadpool:
   worker_count: 5
   cleanup_source_files: true
 
-# Parquet processing
 parquet:
   max_file_size_mb: 64
   timeout_seconds: 1200
@@ -74,14 +70,12 @@ parquet:
   checkpoint_records: 100000
   atomic_upload: true
 
-# Health reporting to control plane
 health_reporting:
   enabled: true
   report_interval: 30
   timeout_seconds: 10
   register_on_startup: true
 
-# Error tracking
 error_tracking:
   enabled: true
 
