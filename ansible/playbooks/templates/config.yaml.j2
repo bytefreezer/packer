@@ -42,7 +42,7 @@ otel:
 # Housekeeping configuration
 housekeeping:
   enabled: {{ config.housekeeping.enabled | lower }}
-  intervalseconds: {{ config.housekeeping.intervalseconds }}
+  interval_seconds: {{ config.housekeeping.interval_seconds }}
   cleanup:
     enabled: {{ config.housekeeping.cleanup.enabled | lower }}
     processing_dir_max_age_hours: {{ config.housekeeping.cleanup.processing_dir_max_age_hours }}
