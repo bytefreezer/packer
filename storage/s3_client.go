@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -88,10 +89,16 @@ func NewS3Client(s3Config S3Config) (*S3Client, error) {
 	var s3Client *s3.Client
 	if s3Config.Endpoint != "" {
 		// Custom endpoint configuration (MinIO, LocalStack, etc.)
+		endpoint := s3Config.Endpoint
+		if !strings.HasPrefix(endpoint, "http") {
+			if s3Config.Ssl {
+				endpoint = "https://" + endpoint
+			} else {
+				endpoint = "http://" + endpoint
+			}
+		}
 		s3Client = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-			o.BaseEndpoint = aws.String(fmt.Sprintf("http%s://%s",
-				map[bool]string{true: "s", false: ""}[s3Config.Ssl],
-				s3Config.Endpoint))
+			o.BaseEndpoint = aws.String(endpoint)
 			o.UsePathStyle = true                              // Required for MinIO and some custom S3 implementations
 			o.DisableLogOutputChecksumValidationSkipped = true // Suppress MinIO checksum warnings
 		})
