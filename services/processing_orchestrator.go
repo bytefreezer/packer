@@ -141,8 +141,15 @@ func (po *ProcessingOrchestrator) Stop() error {
 	return nil
 }
 
-// ScheduleDatasetProcessing schedules a dataset for processing
+// ScheduleDatasetProcessing schedules a dataset for processing.
+// Deduplicates: skips if a job for the same tenant/dataset is already queued or in retry.
 func (po *ProcessingOrchestrator) ScheduleDatasetProcessing(tenantID, datasetID string, priority int) error {
+	// Check for existing job in queue or retry to prevent duplicate scheduling
+	if po.spoolManager.HasJobForDataset(tenantID, datasetID) {
+		log.Debugf("Skipping schedule for %s/%s — job already queued or in retry", tenantID, datasetID)
+		return nil
+	}
+
 	job := &SpoolJob{
 		TenantID:    tenantID,
 		DatasetID:   datasetID,

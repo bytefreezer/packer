@@ -495,6 +495,24 @@ func (sm *SpoolManager) removeJobFromDir(jobID, dir string) error {
 	return err
 }
 
+// HasJobForDataset checks if a job for the given tenant/dataset already exists
+// in either the queue or retry directory. Used for deduplication.
+func (sm *SpoolManager) HasJobForDataset(tenantID, datasetID string) bool {
+	prefix := tenantID + "_" + datasetID + "_"
+	for _, dir := range []string{sm.queueDir, sm.retryDir} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			continue
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() && strings.HasPrefix(entry.Name(), prefix) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // generateJobID creates a unique job ID
 func generateJobID(tenantID, datasetID, jobType string) string {
 	timestamp := time.Now().UnixNano()
