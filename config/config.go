@@ -233,6 +233,13 @@ func validateConfig(cfg *Config) {
 		log.Warnf("CONFIG WARNING: housekeeping.enabled=true but interval_seconds=%d — housekeeping will default to 60s", cfg.Housekeeping.IntervalSeconds)
 	}
 
+	// Default testing_interval_seconds to 15 when not set — without this,
+	// datasets with testing=true are only processed during regular housekeeping (300s)
+	if cfg.Housekeeping.Enabled && cfg.Housekeeping.TestingIntervalSeconds <= 0 {
+		cfg.Housekeeping.TestingIntervalSeconds = 15
+		log.Infof("CONFIG: housekeeping.testing_interval_seconds not set — defaulting to 15s for fast testing mode")
+	}
+
 	// Log effective config summary
 	log.Infof("=== EFFECTIVE CONFIG ===")
 	log.Infof("  server.api_port: %d", cfg.Server.ApiPort)
