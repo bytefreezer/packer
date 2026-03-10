@@ -7,21 +7,21 @@ version: "{{ bytefreezer_packer_version | default('latest') }}"
 
 # Service configuration
 service:
-  name: "bytefreezer-packer"
+  name: "packer"
   user: "root"
   group: "root"
 
 # File paths
 paths:
   binary_dir: "/usr/local/bin"
-  binary_path: "/usr/local/bin/bytefreezer-packer"
-  config_dir: "/etc/bytefreezer-packer"
-  config_path: "/etc/bytefreezer-packer/config.yaml"
-  log_dir: "/var/log/bytefreezer-packer"
-  cache_dir: "/var/cache/bytefreezer-packer"
-  spool_dir: "/var/spool/bytefreezer-packer"
-  service_path: "/etc/systemd/system/bytefreezer-packer.service"
-  logrotate_path: "/etc/logrotate.d/bytefreezer-packer"
+  binary_path: "/usr/local/bin/packer"
+  config_dir: "/etc/packer"
+  config_path: "/etc/packer/config.yaml"
+  log_dir: "/var/log/packer"
+  cache_dir: "/var/cache/packer"
+  spool_dir: "/var/spool/packer"
+  service_path: "/etc/systemd/system/packer.service"
+  logrotate_path: "/etc/logrotate.d/packer"
 
 # Log rotation settings
 logrotate:
@@ -34,7 +34,7 @@ logrotate:
 # Application configuration
 config:
   app:
-    name: "bytefreezer-packer"
+    name: "packer"
     deployment_type: "managed"
 
   logging:
@@ -45,8 +45,8 @@ config:
     api_port: 8083
 
   bytefreezer:
-    cache_path: "/var/cache/bytefreezer-packer"
-    spool_path: "/var/spool/bytefreezer-packer"
+    cache_path: "/var/cache/packer"
+    spool_path: "/var/spool/packer"
 
   # Control Service configuration (replaces dev mode and legacy controller)
   # control_url comes from AWX variable: bytefreezer_control_url
@@ -58,7 +58,7 @@ config:
 
   otel:
     enabled: true
-    service_name: "bytefreezer-packer"
+    service_name: "packer"
     scrapeintervalseconds: 15
     # Prometheus mode - expose metrics on HTTP endpoint for scraping
     prometheus_mode: true
@@ -124,7 +124,7 @@ config:
 
 # Download configuration
 download:
-  url: "https://github.com/{{ github_repo }}/releases/{{ 'latest/download' if version == 'latest' else 'download/' + version }}/bytefreezer-packer-linux-amd64.tar.gz"
+  url: "https://github.com/{{ github_repo }}/releases/{{ 'latest/download' if version == 'latest' else 'download/' + version }}/packer-linux-amd64.tar.gz"
 
 # Docker image configuration for docker_install.yml
 docker:

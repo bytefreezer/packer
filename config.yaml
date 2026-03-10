@@ -5,7 +5,7 @@
 # or a volume-mounted config file override.
 
 app:
-  name: bytefreezer-packer
+  name: packer
   version: 1.0.0
 
 logging:
@@ -16,8 +16,8 @@ server:
   api_port: 8083
 
 bytefreezer:
-  spool_path: /var/spool/bytefreezer-packer
-  cache_path: /var/cache/bytefreezer-packer
+  spool_path: /var/spool/packer
+  cache_path: /var/cache/packer
 
 # Control Service configuration
 control_service:
@@ -29,7 +29,7 @@ control_service:
 
 # S3 source (processed data from piper)
 s3source:
-  bucket_name: "bytefreezer-piper"
+  bucket_name: "piper"
   region: "us-east-1"
   access_key: ""
   secret_key: ""

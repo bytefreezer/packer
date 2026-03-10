@@ -5,7 +5,7 @@
 # For Docker deployments, use config.yaml instead.
 
 app:
-  name: bytefreezer-packer
+  name: packer
   version: 1.0.0
 
 logging:
@@ -16,8 +16,8 @@ server:
   api_port: 8083
 
 bytefreezer:
-  spool_path: /var/spool/bytefreezer-packer
-  cache_path: /var/cache/bytefreezer-packer
+  spool_path: /var/spool/packer
+  cache_path: /var/cache/packer
 
 control_service:
   enabled: true
@@ -27,7 +27,7 @@ control_service:
   timeout_seconds: 30
 
 s3source:
-  bucket_name: "bytefreezer-piper"
+  bucket_name: "piper"
   region: "us-east-1"
   access_key: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_s3_access_key"
   secret_key: "REPLACE_WITH_AWX_VARIABLE_bytefreezer_s3_secret_key"
