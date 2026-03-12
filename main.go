@@ -296,7 +296,10 @@ func Run() error {
 			log.Debugf("Tenant database updated successfully, current count: %d", conf.TenantDatabase.GetTenantCount())
 		}
 
-		// Step 2: Schedule tenant datasets for processing (orchestrator handles the actual processing)
+		// Step 2: Refresh S3 destination connections so credential/endpoint changes are picked up
+		conf.S3DestinationManager.RefreshConnections()
+
+		// Step 3: Schedule tenant datasets for processing (orchestrator handles the actual processing)
 		log.Debug("Scheduling tenant datasets for processing...")
 		tenants := conf.TenantDatabase.GetAllTenants()
 		for _, tenant := range tenants {
@@ -408,11 +411,11 @@ func (svc *Server) Start(housekeepingFn func(), quitterFn func(time.Duration)) {
 	baseInterval := time.Duration(svc.Config.Housekeeping.IntervalSeconds) * time.Second
 
 	if baseInterval <= 0 {
-		baseInterval = 60 * time.Second
+		baseInterval = 30 * time.Second
 		log.Infof("housekeeping interval not set — defaulting to %v", baseInterval)
 	}
 
-	log.Infof("Starting housekeeping with base interval %v (randomized 1x-2x for load balancing)", baseInterval)
+	log.Infof("Starting housekeeping with base interval %v (randomized 1x-1.5x for load balancing)", baseInterval)
 
 	// Run initial housekeeping immediately on startup
 	log.Info("Running initial housekeeping on startup...")
@@ -427,8 +430,8 @@ func (svc *Server) Start(housekeepingFn func(), quitterFn func(time.Duration)) {
 
 	// Continue with randomized intervals for subsequent cycles
 	for {
-		// Generate random interval between baseInterval and 2*baseInterval
-		randomMultiplier := 1.0 + rand.Float64() // #nosec G404 - non-cryptographic random for timing jitter
+		// Generate random interval between baseInterval and 1.5*baseInterval
+		randomMultiplier := 1.0 + rand.Float64()*0.5 // #nosec G404 - non-cryptographic random for timing jitter
 		nextInterval := time.Duration(float64(baseInterval) * randomMultiplier)
 
 		log.Debugf("Next housekeeping in %v (base: %v, multiplier: %.2f)", nextInterval, baseInterval, randomMultiplier)

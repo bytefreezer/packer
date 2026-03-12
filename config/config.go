@@ -230,7 +230,7 @@ func validateConfig(cfg *Config) {
 
 	// Warn on disabled housekeeping
 	if cfg.Housekeeping.Enabled && cfg.Housekeeping.IntervalSeconds <= 0 {
-		log.Warnf("CONFIG WARNING: housekeeping.enabled=true but interval_seconds=%d — housekeeping will default to 60s", cfg.Housekeeping.IntervalSeconds)
+		log.Warnf("CONFIG WARNING: housekeeping.enabled=true but interval_seconds=%d — housekeeping will default to 30s", cfg.Housekeeping.IntervalSeconds)
 	}
 
 	// Default testing_interval_seconds to 15 when not set — without this,

@@ -167,6 +167,29 @@ func (sdm *S3DestinationManager) GetFailureData(tenantID, datasetID string) *Des
 	return &DestinationFailureData{Active: true}
 }
 
+// RefreshConnections clears all cached S3 destination connections so they
+// get re-created with fresh config from control on next use. Called during
+// housekeeping to pick up credential/endpoint changes without restart.
+func (sdm *S3DestinationManager) RefreshConnections() {
+	sdm.mutex.Lock()
+	defer sdm.mutex.Unlock()
+
+	count := len(sdm.connections)
+	if count > 0 {
+		sdm.connections = make(map[string]*S3Client)
+		log.Infof("Cleared %d cached S3 destination connections (will re-create on next use)", count)
+	}
+
+	// Reset failure data so previously-failed destinations get retried
+	for key, fd := range sdm.failureData {
+		if !fd.Active {
+			fd.Active = true
+			fd.FailureCount = 0
+			log.Infof("Reset inactive destination %s for retry", key)
+		}
+	}
+}
+
 // CloseAll closes all S3 connections (for cleanup)
 func (sdm *S3DestinationManager) CloseAll() {
 	sdm.mutex.Lock()
