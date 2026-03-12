@@ -142,7 +142,7 @@ func (sc *S3Client) GetBucketInfo() (string, string, bool) {
 	return sc.bucket, endpoint, sc.config.Ssl
 }
 
-// ListObjects lists objects in the bucket with the given prefix
+// ListObjects lists all objects in the bucket with the given prefix, paginating through all results
 func (sc *S3Client) ListObjects(ctx context.Context, prefix string) ([]*S3ObjectInfo, error) {
 	input := &s3.ListObjectsV2Input{
 		Bucket: aws.String(sc.bucket),
@@ -152,18 +152,25 @@ func (sc *S3Client) ListObjects(ctx context.Context, prefix string) ([]*S3Object
 		input.Prefix = aws.String(prefix)
 	}
 
-	resp, err := sc.s3Client.ListObjectsV2(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list objects: %w", err)
-	}
+	var objects []*S3ObjectInfo
+	for {
+		resp, err := sc.s3Client.ListObjectsV2(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list objects: %w", err)
+		}
 
-	objects := make([]*S3ObjectInfo, 0, len(resp.Contents))
-	for _, obj := range resp.Contents {
-		objects = append(objects, &S3ObjectInfo{
-			Key:          aws.ToString(obj.Key),
-			Size:         aws.ToInt64(obj.Size),
-			LastModified: aws.ToTime(obj.LastModified),
-		})
+		for _, obj := range resp.Contents {
+			objects = append(objects, &S3ObjectInfo{
+				Key:          aws.ToString(obj.Key),
+				Size:         aws.ToInt64(obj.Size),
+				LastModified: aws.ToTime(obj.LastModified),
+			})
+		}
+
+		if !aws.ToBool(resp.IsTruncated) || resp.NextContinuationToken == nil {
+			break
+		}
+		input.ContinuationToken = resp.NextContinuationToken
 	}
 
 	return objects, nil

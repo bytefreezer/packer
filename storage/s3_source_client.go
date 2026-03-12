@@ -142,45 +142,47 @@ func (sc *S3SourceClient) TestConnection() error {
 	return nil
 }
 
-// ListObjects lists objects in the S3 source bucket with optional prefix
-func (sc *S3SourceClient) ListObjects(ctx context.Context, prefix string, maxKeys int32) ([]S3Object, error) {
-	if maxKeys <= 0 {
-		maxKeys = 1000 // Default limit
-	}
-
+// ListObjects lists all objects in the S3 source bucket with optional prefix, paginating through all results
+func (sc *S3SourceClient) ListObjects(ctx context.Context, prefix string) ([]S3Object, error) {
 	input := &s3.ListObjectsV2Input{
-		Bucket:  aws.String(sc.bucket),
-		MaxKeys: &maxKeys,
+		Bucket: aws.String(sc.bucket),
 	}
 
 	if prefix != "" {
 		input.Prefix = aws.String(prefix)
 	}
 
-	result, err := sc.s3Client.ListObjectsV2(ctx, input)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list objects in bucket %s: %w", sc.bucket, err)
-	}
-
-	objects := make([]S3Object, 0, len(result.Contents))
-	for _, obj := range result.Contents {
-		if obj.Key == nil {
-			continue
+	var objects []S3Object
+	for {
+		result, err := sc.s3Client.ListObjectsV2(ctx, input)
+		if err != nil {
+			return nil, fmt.Errorf("failed to list objects in bucket %s: %w", sc.bucket, err)
 		}
 
-		s3Obj := S3Object{
-			Key: *obj.Key,
+		for _, obj := range result.Contents {
+			if obj.Key == nil {
+				continue
+			}
+
+			s3Obj := S3Object{
+				Key: *obj.Key,
+			}
+
+			if obj.Size != nil {
+				s3Obj.Size = *obj.Size
+			}
+
+			if obj.LastModified != nil {
+				s3Obj.LastModified = *obj.LastModified
+			}
+
+			objects = append(objects, s3Obj)
 		}
 
-		if obj.Size != nil {
-			s3Obj.Size = *obj.Size
+		if !aws.ToBool(result.IsTruncated) || result.NextContinuationToken == nil {
+			break
 		}
-
-		if obj.LastModified != nil {
-			s3Obj.LastModified = *obj.LastModified
-		}
-
-		objects = append(objects, s3Obj)
+		input.ContinuationToken = result.NextContinuationToken
 	}
 
 	log.Debugf("Listed %d objects from S3 source bucket %s with prefix '%s'", len(objects), sc.bucket, prefix)
@@ -240,7 +242,7 @@ func (sc *S3SourceClient) GetBucketInfo() (string, string, bool) {
 
 // ListDataFiles lists .ndjson.gz files in the S3 source bucket
 func (sc *S3SourceClient) ListDataFiles(ctx context.Context, prefix string) ([]S3Object, error) {
-	objects, err := sc.ListObjects(ctx, prefix, 1000)
+	objects, err := sc.ListObjects(ctx, prefix)
 	if err != nil {
 		return nil, err
 	}
