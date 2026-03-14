@@ -300,10 +300,14 @@ func Run() error {
 		conf.S3DestinationManager.RefreshConnections()
 
 		// Step 3: Schedule tenant datasets for processing (orchestrator handles the actual processing)
+		// Skip testing datasets here — they are handled by testingHousekeepingLoop at a faster interval.
 		log.Debug("Scheduling tenant datasets for processing...")
 		tenants := conf.TenantDatabase.GetAllTenants()
 		for _, tenant := range tenants {
 			for _, dataset := range tenant.Datasets {
+				if dataset.Testing {
+					continue // handled by testingHousekeepingLoop
+				}
 				// Schedule each dataset for processing with normal priority
 				if err := orchestrator.ScheduleDatasetProcessing(tenant.ID, dataset.ID, 1); err != nil {
 					log.Errorf("Failed to schedule dataset %s/%s for processing: %v", tenant.ID, dataset.ID, err)

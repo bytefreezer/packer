@@ -6,14 +6,15 @@ package services
 import (
 	"context"
 	"fmt"
-	"github.com/bytedance/sonic"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/bytedance/sonic"
 	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/config"
 )
@@ -36,11 +37,12 @@ type SpoolJob struct {
 
 // SpoolManager handles persistent job queuing with infinite retry and DLQ for invalid jobs
 type SpoolManager struct {
-	config   *config.Config
-	basePath string
-	queueDir string
-	retryDir string
-	dlqDir   string
+	config     *config.Config
+	basePath   string
+	queueDir   string
+	retryDir   string
+	dlqDir     string
+	inProgress sync.Map // tracks tenant_dataset keys currently being processed
 }
 
 const (
@@ -129,6 +131,9 @@ func (sm *SpoolManager) GetNextJob(ctx context.Context) (*SpoolJob, error) {
 		return nil, fmt.Errorf("failed to remove job from queue: %w", err)
 	}
 
+	// Track as in-progress for dedup
+	sm.inProgress.Store(job.TenantID+"_"+job.DatasetID, true)
+
 	return job, nil
 }
 
@@ -144,6 +149,9 @@ func (sm *SpoolManager) RequeueForRetry(job *SpoolJob, errorMsg string) error {
 		backoffSeconds = 1800
 	}
 	job.RetryAfter = time.Now().Add(time.Duration(backoffSeconds) * time.Second)
+
+	// Clear in-progress tracking — job is going to retry dir
+	sm.inProgress.Delete(job.TenantID + "_" + job.DatasetID)
 
 	// Infinite retry - no DLQ, "all or nothing" approach
 	// Different nodes will keep retrying until success or destination is marked as down
@@ -193,6 +201,8 @@ func (sm *SpoolManager) PromoteRetryJob(job *SpoolJob) error {
 // CompleteJob removes a successfully completed job
 func (sm *SpoolManager) CompleteJob(job *SpoolJob) error {
 	log.Debugf("Completing job %s", job.ID)
+	// Clear in-progress tracking
+	sm.inProgress.Delete(job.TenantID + "_" + job.DatasetID)
 	// Job might be in queue dir if it was being processed
 	// Just ensure it's removed (ignore errors if not found)
 	if err := sm.removeJobFromDir(job.ID, sm.queueDir); err != nil {
@@ -496,9 +506,14 @@ func (sm *SpoolManager) removeJobFromDir(jobID, dir string) error {
 }
 
 // HasJobForDataset checks if a job for the given tenant/dataset already exists
-// in either the queue or retry directory. Used for deduplication.
+// in the queue, retry directory, or is currently being processed. Used for deduplication.
 func (sm *SpoolManager) HasJobForDataset(tenantID, datasetID string) bool {
-	prefix := tenantID + "_" + datasetID + "_"
+	key := tenantID + "_" + datasetID
+	// Check if currently being processed
+	if _, ok := sm.inProgress.Load(key); ok {
+		return true
+	}
+	prefix := key + "_"
 	for _, dir := range []string{sm.queueDir, sm.retryDir} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
@@ -511,6 +526,21 @@ func (sm *SpoolManager) HasJobForDataset(tenantID, datasetID string) bool {
 		}
 	}
 	return false
+}
+
+// GetQueueCount returns the number of jobs in the queue directory (cheap, no deserialization).
+func (sm *SpoolManager) GetQueueCount() int {
+	entries, err := os.ReadDir(sm.queueDir)
+	if err != nil {
+		return 0
+	}
+	count := 0
+	for _, entry := range entries {
+		if !entry.IsDir() && strings.HasSuffix(entry.Name(), JobExtension) {
+			count++
+		}
+	}
+	return count
 }
 
 // generateJobID creates a unique job ID

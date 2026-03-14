@@ -141,12 +141,22 @@ func (po *ProcessingOrchestrator) Stop() error {
 	return nil
 }
 
+// MaxQueueSize is the maximum number of jobs allowed in the queue before scheduling is paused.
+const MaxQueueSize = 50
+
 // ScheduleDatasetProcessing schedules a dataset for processing.
-// Deduplicates: skips if a job for the same tenant/dataset is already queued or in retry.
+// Deduplicates: skips if a job for the same tenant/dataset is already queued, in retry, or in progress.
+// Also skips if the queue exceeds MaxQueueSize to prevent unbounded memory growth.
 func (po *ProcessingOrchestrator) ScheduleDatasetProcessing(tenantID, datasetID string, priority int) error {
-	// Check for existing job in queue or retry to prevent duplicate scheduling
+	// Check for existing job in queue, retry, or in-progress to prevent duplicate scheduling
 	if po.spoolManager.HasJobForDataset(tenantID, datasetID) {
-		log.Debugf("Skipping schedule for %s/%s — job already queued or in retry", tenantID, datasetID)
+		log.Debugf("Skipping schedule for %s/%s — job already queued, in retry, or in progress", tenantID, datasetID)
+		return nil
+	}
+
+	// Check queue size cap to prevent unbounded growth
+	if queueCount := po.spoolManager.GetQueueCount(); queueCount >= MaxQueueSize {
+		log.Warnf("Skipping schedule for %s/%s — queue at capacity (%d/%d)", tenantID, datasetID, queueCount, MaxQueueSize)
 		return nil
 	}
 
