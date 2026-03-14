@@ -97,10 +97,16 @@ jobs:
       run: |
         VERSION=${GITHUB_REF_NAME#v}
         if [ "${{ github.ref_type }}" != "tag" ]; then
-          VERSION="main-${GITHUB_SHA:0:8}"
+          git fetch --tags --force
+          TAG=$(git tag --points-at HEAD | grep '^v' | sort -V | tail -1)
+          if [ -n "$TAG" ]; then
+            VERSION=${TAG#v}
+          else
+            VERSION="main-${GITHUB_SHA:0:8}"
+          fi
         fi
         BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-        
+
         go build \
           -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GITHUB_SHA}" \
           -o ${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.arch }} .
@@ -144,7 +150,13 @@ jobs:
       run: |
         VERSION=${GITHUB_REF_NAME#v}
         if [ "${{ github.ref_type }}" != "tag" ]; then
-          VERSION="main-${GITHUB_SHA:0:8}"
+          git fetch --tags --force
+          TAG=$(git tag --points-at HEAD | grep '^v' | sort -V | tail -1)
+          if [ -n "$TAG" ]; then
+            VERSION=${TAG#v}
+          else
+            VERSION="main-${GITHUB_SHA:0:8}"
+          fi
         fi
         BUILD_TIME=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
         go build -ldflags="-s -w -X main.version=${VERSION} -X main.buildTime=${BUILD_TIME} -X main.gitCommit=${GITHUB_SHA}" -o ${{ env.BINARY_NAME }} .
