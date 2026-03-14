@@ -195,7 +195,7 @@ func Run() error {
 		}
 		if isDockerContainer() {
 			// Docker: hostname is the container ID. Prepend HOST_HOSTNAME if available.
-			if hostHostname := os.Getenv("HOST_HOSTNAME"); hostHostname != "" {
+			if hostHostname := os.Getenv("HOST_HOSTNAME"); hostHostname != "" && hostHostname != hostname {
 				hostname = fmt.Sprintf("%s:%s", hostHostname, hostname)
 			}
 			log.Infof("Running in Docker container, instance ID: %s", hostname)
