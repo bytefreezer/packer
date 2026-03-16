@@ -194,12 +194,12 @@ func (pc *ParquetConverter) StreamNDJSONToParquetMulti(ctx context.Context, file
 		return nil, fmt.Errorf("failed to get S3 destination client: %w", err)
 	}
 
-	// Determine compression codec
-	compression := compress.Codecs.Uncompressed
-	if options.Compression == "zstd" {
-		compression = compress.Codecs.Zstd
-	} else if options.Compression == "snappy" {
+	// Determine compression codec — default to ZSTD (matches batch mode)
+	compression := compress.Codecs.Zstd
+	if options.Compression == "snappy" {
 		compression = compress.Codecs.Snappy
+	} else if options.Compression == "uncompressed" {
+		compression = compress.Codecs.Uncompressed
 	}
 
 	// Helper function to create a new writer state
@@ -254,11 +254,12 @@ func (pc *ParquetConverter) StreamNDJSONToParquetMulti(ctx context.Context, file
 			state.s3Writer.SetMetadata(s3Metadata)
 		}
 
-		outputSize := state.s3Writer.BytesWritten()
-
 		if err := state.writer.Close(); err != nil {
 			return nil, fmt.Errorf("failed to close Parquet writer: %w", err)
 		}
+
+		// Measure output size AFTER close — Close() flushes the final row group and footer
+		outputSize := state.s3Writer.BytesWritten()
 
 		// Atomic rename if enabled
 		if options.AtomicUpload {
