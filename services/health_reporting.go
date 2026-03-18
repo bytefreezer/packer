@@ -54,6 +54,7 @@ type HealthReportRequest struct {
 	ServiceID     string                 `json:"service_id"`
 	InstanceAPI   string                 `json:"instance_api"`
 	Healthy       bool                   `json:"healthy"`
+	Status        string                 `json:"status,omitempty"`
 	Configuration map[string]interface{} `json:"configuration,omitempty"`
 	Metrics       map[string]interface{} `json:"metrics,omitempty"`
 }
@@ -114,6 +115,48 @@ func (h *HealthReportingService) Stop() {
 		}
 		log.Info("Health reporting service stopped")
 	}
+}
+
+// ReportUninstalling sends a final health report with status "uninstalling" before cleanup.
+// This tells the control plane the service is intentionally shutting down (not a network issue).
+func (h *HealthReportingService) ReportUninstalling() {
+	if !h.enabled {
+		return
+	}
+
+	healthReq := HealthReportRequest{
+		ServiceName: h.serviceType,
+		ServiceID:   h.instanceID,
+		InstanceAPI: h.instanceAPI,
+		Healthy:     false,
+		Status:      "uninstalling",
+	}
+
+	reqBody, err := sonic.Marshal(healthReq)
+	if err != nil {
+		log.Warnf("Failed to marshal uninstalling report: %v", err)
+		return
+	}
+
+	url := h.controlURL + "/api/v1/services/report"
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(reqBody))
+	if err != nil {
+		log.Warnf("Failed to create uninstalling report request: %v", err)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if h.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+h.apiKey)
+	}
+
+	resp, err := h.httpClient.Do(req)
+	if err != nil {
+		log.Warnf("Failed to send uninstalling report: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	log.Infof("Sent final 'uninstalling' health report to control plane")
 }
 
 // Deregister removes this service instance from the control service

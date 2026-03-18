@@ -237,6 +237,7 @@ func Run() error {
 		go func() {
 			<-healthReportingService.UninstallChan()
 			log.Warnf("Received uninstall directive from control plane — shutting down and self-removing")
+			healthReportingService.ReportUninstalling()
 			healthReportingService.Stop()
 			selfCleanup("bytefreezer-packer")
 			os.Exit(0)
