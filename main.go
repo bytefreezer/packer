@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/bytedance/sonic"
+	controlclient "github.com/bytefreezer/goodies/control-client"
 	"github.com/bytefreezer/goodies/log"
 	"github.com/bytefreezer/packer/api"
 	"github.com/bytefreezer/packer/config"
@@ -353,6 +354,28 @@ func Run() error {
 		}
 
 		log.Debug("Housekeeping cycle completed")
+	}
+
+	// Initialize change observer for fast tenant/dataset refresh
+	if conf.ControlService.ControlURL != "" {
+		observerClient := controlclient.NewClient(controlclient.Config{
+			BaseURL:        conf.ControlService.ControlURL,
+			APIKey:         conf.ControlService.APIKey,
+			TimeoutSeconds: 10,
+		})
+		changeObserver := controlclient.NewChangeObserver(observerClient, conf.ControlService.AccountID, 15*time.Second)
+		changeObserver.SetLogFunc(func(format string, args ...interface{}) {
+			log.Infof(format, args...)
+		})
+		changeObserver.OnChange(controlclient.ChangeCategoryDatasets, func() {
+			log.Info("Change detected: datasets — triggering tenant database refresh")
+			if err := conf.UpdateTenantDatabase(); err != nil {
+				log.Errorf("Failed tenant refresh on change: %v", err)
+			}
+		})
+		changeObserver.Start()
+		defer changeObserver.Stop()
+		log.Info("Change observer started — polling every 15s for dataset changes")
 	}
 
 	//start server
